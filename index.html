@@ -1,0 +1,2566 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FIG - Bitcoin Trading Simulator IDR</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        figDark: '#0B0E14',
+                        figCard: '#151922',
+                        figBorder: '#232A37',
+                        figAccent: '#2563EB',
+                        figUp: '#10B981',
+                        figDown: '#EF4444'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0B0E14;
+            color: #E2E8F0;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #0B0E14; }
+        ::-webkit-scrollbar-thumb { background: #232A37; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #374151; }
+        
+        .nav-tab-active {
+            background-color: #2563EB;
+            color: #FFFFFF;
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+        }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        canvas { display: block; width: 100%; height: 100%; }
+    </style>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        window.firebaseModules = { doc, setDoc, getDoc, onSnapshot };
+        window.db = null;
+        window.auth = null;
+        window.appId = typeof __app_id !== 'undefined' ? __app_id : 'fig-btc-sim';
+        window.currentAuthUser = null;
+        window.firestoreSyncActive = false;
+        window.activeAccountUnsubscribe = null;
+
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+            try {
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                window.db = getFirestore(app);
+                window.auth = getAuth(app);
+
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(window.auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(window.auth);
+                        }
+                    } catch (err) {
+                        console.warn("Auth setup notice:", err);
+                    }
+                };
+
+                onAuthStateChanged(window.auth, (user) => {
+                    if (user) {
+                        window.currentAuthUser = user;
+                        window.firestoreSyncActive = true;
+                        if (typeof window.syncWithCloudDatabase === 'function') {
+                            window.syncWithCloudDatabase();
+                        }
+                    }
+                });
+
+                initAuth();
+            } catch (e) {
+                console.warn("Firebase setup notice:", e);
+                window.db = null;
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen flex flex-col bg-figDark text-gray-200 antialiased overflow-x-hidden">
+
+    <header class="bg-figCard border-b border-figBorder sticky top-0 z-40 shadow-lg">
+        <div class="max-w-7xl mx-auto px-3 py-2 sm:px-6 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <!-- LOGO CONCEPT: BIRD CARRYING BITCOIN -->
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-700 via-indigo-600 to-amber-500 p-0.5 flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
+                    <div class="w-full h-full bg-figDark rounded-[10px] flex items-center justify-center overflow-hidden">
+                        <svg class="w-7 h-7 text-amber-400" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M8 26C18 18 28 14 40 20C48 15 56 12 60 10C56 18 52 24 46 28C42 38 32 46 22 48C18 42 14 36 8 26Z" fill="url(#birdGrad)" />
+                            <path d="M40 20C44 18 48 17 52 18C50 21 47 23 44 24L40 20Z" fill="#F59E0B" />
+                            <circle cx="28" cy="44" r="11" fill="#F59E0B" stroke="#B45309" stroke-width="2"/>
+                            <path d="M25 38H29.5C31 38 32 38.8 32 40C32 40.8 31.4 41.5 30.5 41.8C31.7 42.1 32.5 43 32.5 44.2C32.5 45.6 31.2 46.5 29.5 46.5H25V38ZM27 39.5V41.5H29C29.6 41.5 30 41.1 30 40.5C30 39.9 29.6 39.5 29 39.5H27ZM27 43V45H29.5C30.2 45 30.7 44.5 30.7 43.9C30.7 43.3 30.2 43 29.5 43H27Z" fill="#78350F"/>
+                            <path d="M27.5 36.5V38M29.5 36.5V38M27.5 46.5V48M29.5 46.5V48" stroke="#78350F" stroke-width="1.5" stroke-linecap="round"/>
+                            <defs>
+                                <linearGradient id="birdGrad" x1="8" y1="10" x2="60" y2="48" gradientUnits="userSpaceOnUse">
+                                    <stop stop-color="#3B82F6"/>
+                                    <stop offset="0.6" stop-color="#6366F1"/>
+                                    <stop offset="1" stop-color="#F59E0B"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-black tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-indigo-300 to-amber-400">FIG</h1>
+                </div>
+            </div>
+
+            <!-- Price Ticker, Cloud Status & Profile Avatar -->
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <div id="syncBadge" title="Status Sinkronisasi Cloud Multi-Device" class="hidden sm:flex items-center space-x-1 px-2 py-1 bg-emerald-950/60 border border-emerald-800 text-emerald-400 rounded-lg text-[10px] font-mono">
+                    <i class="fa-solid fa-cloud-arrow-up text-emerald-400"></i>
+                    <span>CLOUD SYNC</span>
+                </div>
+
+                <div id="headerPriceBadge" class="font-mono text-[11px] font-bold text-figUp px-2.5 py-1 bg-figDark/80 rounded-lg border border-figBorder flex items-center space-x-1">
+                    <span id="miniBtcPrice">Rp 1.680.000.000</span>
+                </div>
+
+                <!-- PROFILE AVATAR TRIGGER BUTTON -->
+                <button onclick="openProfileModal()" class="relative flex items-center space-x-2 bg-figDark/90 hover:bg-figBorder/50 p-1.5 px-2.5 rounded-xl border border-figBorder transition">
+                    <div id="headerAvatarContainer" class="w-6 h-6 rounded-lg bg-blue-600/30 border border-blue-500/40 flex items-center justify-center overflow-hidden shrink-0">
+                        <i id="headerAvatarDefaultIcon" class="fa-solid fa-user text-blue-400 text-xs"></i>
+                        <img id="headerAvatarImg" src="" alt="Profile" class="w-full h-full object-cover hidden">
+                    </div>
+                    <div class="text-left hidden sm:block">
+                        <div id="headerProfileName" class="text-xs font-bold text-gray-200 truncate max-w-[90px]">GUEST</div>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <!-- MAIN PAGE NAVIGATION TABS -->
+        <nav class="max-w-7xl mx-auto px-2 py-1 bg-figDark/90 flex items-center space-x-1 overflow-x-auto no-scrollbar">
+            <button id="navTrading" onclick="switchAppTab('trading')" class="nav-tab-active shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-chart-candlestick text-xs"></i>
+                <span data-i18n="nav_trading">Trading</span>
+            </button>
+            
+            <button id="navPosisi" onclick="switchAppTab('posisi')" class="text-gray-400 hover:text-gray-200 shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-layer-group text-xs"></i>
+                <span data-i18n="nav_posisi">Posisi</span>
+                <span id="navPosBadge" class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full ml-0.5">0</span>
+            </button>
+
+            <button id="navSaldo" onclick="switchAppTab('saldo')" class="text-gray-400 hover:text-gray-200 shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-wallet text-xs"></i>
+                <span data-i18n="nav_saldo">Saldo</span>
+            </button>
+
+            <button id="navRiwayat" onclick="switchAppTab('riwayat')" class="text-gray-400 hover:text-gray-200 shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-clock-rotate-left text-xs"></i>
+                <span data-i18n="nav_riwayat">Riwayat Transaksi</span>
+            </button>
+
+            <button id="navBelajar" onclick="switchAppTab('belajar')" class="text-gray-400 hover:text-gray-200 shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-graduation-cap text-xs"></i>
+                <span data-i18n="nav_belajar">Bantuan / Belajar</span>
+            </button>
+
+            <button id="navPengaturan" onclick="switchAppTab('pengaturan')" class="text-gray-400 hover:text-gray-200 shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5">
+                <i class="fa-solid fa-gear text-xs"></i>
+                <span data-i18n="nav_pengaturan">Pengaturan</span>
+            </button>
+        </nav>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 space-y-3">
+
+        <!-- ==================== 1. HALAMAN TRADING ==================== -->
+        <section id="pageTrading" class="space-y-2">
+            
+            <!-- HEADER HARGA BTC/IDR -->
+            <div class="bg-figCard border border-figBorder rounded-xl p-2.5 sm:p-4 shadow-md flex items-center justify-between gap-2">
+                <div class="flex items-center space-x-2.5">
+                    <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+                        <i class="fa-brands fa-bitcoin text-amber-500 text-xl sm:text-2xl"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span class="font-extrabold text-sm sm:text-lg text-white">BTC / IDR</span>
+                        </div>
+                        <p class="text-[10px] sm:text-xs text-gray-400">Bitcoin / Rupiah</p>
+                    </div>
+                </div>
+
+                <!-- Price Display -->
+                <div class="flex items-center space-x-3 sm:space-x-6">
+                    <div>
+                        <div class="text-[9px] sm:text-xs text-gray-500 text-right" data-i18n="current_price_label">Harga Saat Ini:</div>
+                        <div id="liveBtcPrice" class="text-lg sm:text-2xl font-black font-mono tracking-tight text-figUp text-right">
+                            Rp 1.680.000.000
+                        </div>
+                    </div>
+
+                    <div class="text-right font-mono text-xs hidden sm:block">
+                        <div id="priceChange24h" class="text-figUp font-bold flex items-center justify-end">
+                            <i class="fa-solid fa-caret-up me-1"></i>+2.45%
+                        </div>
+                        <div class="text-[10px] text-gray-400">
+                            High: <span id="high24h" class="text-gray-300">Rp 1.710.000.000</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RESPONSIVE GRID FOR DESKTOP / LAPTOP: CHART LEFT, ORDER PANEL RIGHT -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-3">
+
+                <!-- LEFT SIDE: GRAFIK CANDLESTICK & PNL SUMMARY -->
+                <div class="lg:col-span-7 xl:col-span-8 space-y-2">
+                    
+                    <!-- GRAFIK CANDLESTICK BTC -->
+                    <div class="bg-figCard border border-figBorder rounded-xl p-2 flex flex-col shadow-md relative">
+                        <div class="flex flex-wrap items-center justify-between gap-1.5 mb-1.5 pb-1.5 border-b border-figBorder text-xs text-gray-400">
+                            <div class="flex items-center space-x-1">
+                                <span class="text-gray-500 text-[10px] font-semibold me-1">Timeframe:</span>
+                                <button onclick="setTimeframe('1m')" id="tf-1m" class="px-2 py-0.5 rounded bg-blue-600 text-white font-bold text-[10px]">1m</button>
+                                <button onclick="setTimeframe('5m')" id="tf-5m" class="px-2 py-0.5 rounded hover:bg-gray-800 text-[10px]">5m</button>
+                                <button onclick="setTimeframe('15m')" id="tf-15m" class="px-2 py-0.5 rounded hover:bg-gray-800 text-[10px]">15m</button>
+                                <button onclick="setTimeframe('1h')" id="tf-1h" class="px-2 py-0.5 rounded hover:bg-gray-800 text-[10px]">1h</button>
+                            </div>
+
+                            <div class="flex items-center space-x-2 text-[10px]">
+                                <label class="flex items-center space-x-1 cursor-pointer">
+                                    <input type="checkbox" id="chkEma" checked onchange="toggleIndicators()" class="rounded bg-gray-800 border-gray-700 text-blue-600 focus:ring-0">
+                                    <span>EMA</span>
+                                </label>
+                                <label class="flex items-center space-x-1 cursor-pointer">
+                                    <input type="checkbox" id="chkVol" checked onchange="toggleIndicators()" class="rounded bg-gray-800 border-gray-700 text-blue-600 focus:ring-0">
+                                    <span>Volume</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="relative w-full h-[260px] sm:h-[340px] lg:h-[380px] overflow-hidden rounded">
+                            <canvas id="tradingChart"></canvas>
+                        </div>
+
+                        <div class="mt-1.5 text-[10px] text-gray-400 flex items-center justify-between font-mono">
+                            <div id="candleOhlcText" class="truncate">
+                                O: - | H: - | L: - | C: -
+                            </div>
+                            <div class="flex items-center space-x-1.5 text-[9px] text-gray-500 shrink-0">
+                                <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> <span data-i18n="up">Naik</span>
+                                <span class="inline-block w-2 h-2 rounded-full bg-rose-500 ml-1"></span> <span data-i18n="down">Turun</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TOTAL UNREALIZED PNL DISPLAY -->
+                    <div class="bg-figCard border border-figBorder/90 rounded-xl p-2.5 sm:p-3 shadow-md flex items-center justify-between text-xs">
+                        <div class="flex items-center space-x-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                                <i class="fa-solid fa-chart-line text-sm"></i>
+                            </div>
+                            <div>
+                                <div class="text-white font-bold text-xs sm:text-sm">Keuntungan / Kerugian Asetmu</div>
+                                <div class="text-[10px] text-gray-400" data-i18n="trading_pnl_summary">Total Unrealized PnL:</div>
+                            </div>
+                        </div>
+                        <div id="tradingPagePnlDisplay" class="font-mono font-black text-sm sm:text-base text-gray-300 text-right">
+                            Rp 0 (0.00%)
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- RIGHT SIDE / BELOW ON MOBILE: PANEL ORDER -->
+                <div class="lg:col-span-5 xl:col-span-4">
+                    <div class="bg-figCard border border-figBorder rounded-xl p-3 sm:p-4 shadow-xl flex flex-col space-y-2.5">
+                        
+                        <div class="flex items-center justify-between pb-1.5 border-b border-figBorder">
+                            <div class="flex items-center space-x-2">
+                                <i class="fa-solid fa-sliders text-blue-500"></i>
+                                <h2 class="font-bold text-xs sm:text-sm text-white" data-i18n="order_panel_title">Panel Order Transaction</h2>
+                            </div>
+                            <span class="text-[10px] text-gray-400 font-mono">BTC/IDR</span>
+                        </div>
+
+                        <!-- BUY / SELL TYPE TOGGLE -->
+                        <div class="grid grid-cols-2 gap-1.5 bg-figDark p-1 rounded-xl border border-figBorder">
+                            <button id="btnSideBuy" onclick="setTradeSide('BUY')" class="py-2 rounded-lg font-extrabold text-xs text-white bg-emerald-600 shadow flex items-center justify-center space-x-1.5 transition">
+                                <i class="fa-solid fa-arrow-up"></i>
+                                <span>BUY / LONG (<span data-i18n="up">Naik</span>)</span>
+                            </button>
+                            <button id="btnSideSell" onclick="setTradeSide('SELL')" class="py-2 rounded-lg font-bold text-xs text-gray-400 hover:text-white flex items-center justify-center space-x-1.5 transition">
+                                <i class="fa-solid fa-arrow-down"></i>
+                                <span>SELL / SHORT (<span data-i18n="down">Turun</span>)</span>
+                            </button>
+                        </div>
+
+                        <!-- MARKET ORDER vs LIMIT ORDER -->
+                        <div class="grid grid-cols-2 gap-1.5 bg-figDark p-1 rounded-lg border border-figBorder text-xs">
+                            <button id="btnOrderMarket" onclick="setOrderType('MARKET')" class="py-1 rounded font-semibold bg-gray-800 text-white shadow">Market Order</button>
+                            <button id="btnOrderLimit" onclick="setOrderType('LIMIT')" class="py-1 rounded font-semibold text-gray-400 hover:text-gray-200">Limit Order</button>
+                        </div>
+
+                        <!-- LEVERAGE SELECTION -->
+                        <div>
+                            <div class="flex items-center justify-between text-xs mb-1">
+                                <span class="text-gray-400 flex items-center space-x-1">
+                                    <span>Leverage:</span>
+                                    <i class="fa-solid fa-circle-info text-gray-500 cursor-pointer" onclick="switchAppTab('belajar')" title="Apa itu Leverage?"></i>
+                                </span>
+                                <span id="leverageValueDisplay" class="font-bold text-blue-400 font-mono text-xs">1x (Spot)</span>
+                            </div>
+                            <div class="grid grid-cols-5 gap-1 text-xs">
+                                <button onclick="setLeverage(1)" class="lev-btn bg-blue-600 text-white py-1 rounded font-mono font-bold text-xs">1x</button>
+                                <button onclick="setLeverage(2)" class="lev-btn bg-gray-800 hover:bg-gray-700 text-gray-300 py-1 rounded font-mono text-xs">2x</button>
+                                <button onclick="setLeverage(5)" class="lev-btn bg-gray-800 hover:bg-gray-700 text-gray-300 py-1 rounded font-mono text-xs">5x</button>
+                                <button onclick="setLeverage(10)" class="lev-btn bg-gray-800 hover:bg-gray-700 text-gray-300 py-1 rounded font-mono text-xs">10x</button>
+                                <button onclick="setLeverage(20)" class="lev-btn bg-gray-800 hover:bg-gray-700 text-gray-300 py-1 rounded font-mono text-xs">20x</button>
+                            </div>
+                        </div>
+
+                        <!-- LIMIT PRICE INPUT -->
+                        <div id="limitPriceGroup" class="hidden">
+                            <label class="block text-[10px] text-gray-400 mb-1" data-i18n="limit_price_label">Harga Target Limit (IDR):</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-2 text-xs text-gray-500 font-mono">Rp</span>
+                                <input type="number" id="inputLimitPrice" placeholder="Contoh: 1650000000" oninput="calculateTradeValues()" class="w-full bg-figDark border border-figBorder rounded-lg pl-9 pr-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-blue-500">
+                            </div>
+                        </div>
+
+                        <!-- DUAL INPUT GRID: NOMINAL RUPIAH & JUMLAH BTC -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2">
+                            <div>
+                                <div class="flex items-center justify-between text-xs mb-1">
+                                    <label class="text-gray-300 font-semibold text-xs flex items-center space-x-1">
+                                        <i class="fa-solid fa-money-bill-wave text-emerald-400"></i>
+                                        <span>Nominal Uang (Rp):</span>
+                                    </label>
+                                    <span class="text-[10px] text-gray-500">Ketik IDR</span>
+                                </div>
+                                <div class="relative">
+                                    <span class="absolute left-3 top-2 text-xs text-gray-400 font-mono">Rp</span>
+                                    <input type="number" id="inputRupiahAmount" placeholder="1000000" oninput="handleRupiahInputChanged()" class="w-full bg-figDark border border-figBorder rounded-lg pl-9 pr-3 py-2 text-xs font-mono text-emerald-400 font-bold focus:outline-none focus:border-emerald-500">
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="flex items-center justify-between text-xs mb-1">
+                                    <label class="text-gray-300 font-semibold text-xs" data-i18n="btc_amount_label">Jumlah Bitcoin (BTC):</label>
+                                    <span class="text-[10px] text-gray-400"><span data-i18n="max">Maks</span>: <span id="maxBtcBuyDisplay" class="font-mono text-gray-300">0.00 BTC</span></span>
+                                </div>
+                                <div class="relative">
+                                    <input type="number" step="0.00000001" id="inputBtcAmount" placeholder="0.00066667" oninput="handleBtcInputChanged()" class="w-full bg-figDark border border-figBorder rounded-lg pl-3 pr-12 py-2 text-xs font-mono text-white font-bold focus:outline-none focus:border-blue-500">
+                                    <span class="absolute right-3 top-2 text-xs text-gray-400 font-bold">BTC</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Quick Percentage Fill Buttons -->
+                        <div class="grid grid-cols-4 gap-1 text-xs">
+                            <button onclick="fillAmountPercent(25)" class="bg-gray-800 hover:bg-gray-700 py-1 rounded text-gray-300 text-xs font-semibold">25%</button>
+                            <button onclick="fillAmountPercent(50)" class="bg-gray-800 hover:bg-gray-700 py-1 rounded text-gray-300 text-xs font-semibold">50%</button>
+                            <button onclick="fillAmountPercent(75)" class="bg-gray-800 hover:bg-gray-700 py-1 rounded text-gray-300 text-xs font-semibold">75%</button>
+                            <button onclick="fillAmountPercent(100)" class="bg-gray-800 hover:bg-gray-700 py-1 rounded text-gray-300 text-xs font-semibold">100%</button>
+                        </div>
+
+                        <!-- MAIN EXECUTE BUTTON -->
+                        <button id="btnMainSubmit" onclick="executeCurrentOrder()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3 px-4 rounded-xl shadow-lg shadow-emerald-950/50 flex items-center justify-center space-x-2 text-sm transition transform active:scale-95 my-1">
+                            <i id="btnMainSubmitIcon" class="fa-solid fa-arrow-up"></i>
+                            <span id="btnMainSubmitText">EKSEKUSI BUY / LONG BTC</span>
+                        </button>
+
+                        <!-- AUTOMATIC RUPIAH CALCULATOR DISPLAY -->
+                        <div class="bg-figDark/90 border border-figBorder/80 rounded-xl p-2.5 text-xs space-y-1">
+                            <div class="flex justify-between items-center text-gray-400">
+                                <span data-i18n="total_trade_val">Total Nilai Transaksi:</span>
+                                <strong id="calcTotalValue" class="font-mono text-white text-xs sm:text-sm">Rp 0</strong>
+                            </div>
+                            <div class="flex justify-between items-center text-gray-400">
+                                <span data-i18n="required_margin">Margin Dibutuhkan:</span>
+                                <strong id="calcRequiredMargin" class="font-mono text-amber-300 text-xs sm:text-sm">Rp 0</strong>
+                            </div>
+                        </div>
+
+                        <!-- STOP LOSS & TAKE PROFIT -->
+                        <div class="border-t border-figBorder pt-2 space-y-1.5">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="font-semibold text-gray-300 text-xs" data-i18n="sl_tp_protection">Pengatur Proteksi (SL &amp; TP Opsional):</span>
+                                <i class="fa-solid fa-shield-halved text-blue-400 text-xs"></i>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                    <label class="block text-[10px] text-gray-400 mb-0.5">Take Profit Target (Rp):</label>
+                                    <input type="number" id="inputTpPrice" placeholder="Target Untung" class="w-full bg-figDark border border-figBorder rounded-lg px-2.5 py-1.5 text-xs font-mono text-emerald-400 focus:outline-none focus:border-emerald-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-gray-400 mb-0.5">Stop Loss Limit (Rp):</label>
+                                    <input type="number" id="inputSlPrice" placeholder="Batas Rugi" class="w-full bg-figDark border border-figBorder rounded-lg px-2.5 py-1.5 text-xs font-mono text-rose-400 focus:outline-none focus:border-rose-500">
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- ==================== 2. HALAMAN POSISI TERBUKA ==================== -->
+        <section id="pagePosisi" class="space-y-3 hidden">
+            <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-bold text-white flex items-center space-x-2">
+                        <i class="fa-solid fa-layer-group text-blue-500"></i>
+                        <span data-i18n="positions_title">Posisi Transaksi Terbuka</span>
+                    </h2>
+                    <p class="text-xs text-gray-400" data-i18n="positions_sub">Daftar transaksi aktif yang sedang berjalan real-time</p>
+                </div>
+                <span id="posCountBadge" class="bg-blue-600/30 text-blue-300 border border-blue-500/40 text-xs font-mono px-2.5 py-1 rounded-lg">0 Posisi</span>
+            </div>
+
+            <!-- Positions Table -->
+            <div class="bg-figCard border border-figBorder rounded-xl p-3 sm:p-4 shadow-md overflow-x-auto">
+                <table class="w-full text-left text-xs text-gray-300 font-mono">
+                    <thead class="bg-figDark text-gray-400 uppercase text-[10px]">
+                        <tr>
+                            <th class="p-2.5">Posisi / Tipe</th>
+                            <th class="p-2.5">Jumlah BTC</th>
+                            <th class="p-2.5">Harga Entry</th>
+                            <th class="p-2.5">Harga BTC Now</th>
+                            <th class="p-2.5">Margin (Rp)</th>
+                            <th class="p-2.5">Est. Liq</th>
+                            <th class="p-2.5">Unrealized PnL</th>
+                            <th class="p-2.5">SL / TP</th>
+                            <th class="p-2.5 text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="openPositionsTableBody" class="divide-y divide-figBorder/50">
+                        <tr>
+                            <td colspan="9" class="p-8 text-center text-gray-500 font-sans">
+                                <i class="fa-solid fa-inbox text-3xl mb-2 block"></i>
+                                Belum ada posisi transaksi yang terbuka.<br>Buka menu <strong>Trading</strong> untuk memulai transaksi!
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pending Limit Orders List -->
+            <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md mt-4">
+                <h3 class="text-xs font-bold text-gray-300 mb-3 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-clock text-amber-400"></i>
+                    <span>Pending Limit Orders</span>
+                </h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs text-gray-300 font-mono">
+                        <thead class="bg-figDark text-gray-400 uppercase text-[10px]">
+                            <tr>
+                                <th class="p-2">Waktu</th>
+                                <th class="p-2">Tipe Order</th>
+                                <th class="p-2">Target Harga Limit</th>
+                                <th class="p-2">Jumlah BTC</th>
+                                <th class="p-2">Total Nilai (Rp)</th>
+                                <th class="p-2 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pendingOrdersTableBody" class="divide-y divide-figBorder/50">
+                            <tr>
+                                <td colspan="6" class="p-4 text-center text-gray-500 font-sans">Tidak ada pending order.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 3. HALAMAN SALDO ==================== -->
+        <section id="pageSaldo" class="space-y-4 hidden">
+            
+            <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-bold text-white flex items-center space-x-2">
+                        <i class="fa-solid fa-wallet text-emerald-400"></i>
+                        <span data-i18n="saldo_title">Ringkasan Saldo &amp; Aset Akun</span>
+                    </h2>
+                    <p class="text-xs text-gray-400" data-i18n="saldo_sub">Manajemen dana Rupiah (IDR)</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="resetAccount()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center space-x-1">
+                        <i class="fa-solid fa-rotate-left text-amber-400"></i>
+                        <span>Reset Saldo</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Detailed Cards Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md">
+                    <div class="text-xs text-gray-400 mb-1 flex justify-between items-center">
+                        <span data-i18n="initial_balance">Saldo Awal</span>
+                        <i class="fa-solid fa-building-columns text-blue-400"></i>
+                    </div>
+                    <div class="text-lg sm:text-xl font-bold font-mono text-white">
+                        Rp 100.000.000
+                    </div>
+                    <p class="text-[10px] text-gray-500 mt-1">Modal dasar awal</p>
+                </div>
+
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md">
+                    <div class="text-xs text-gray-400 mb-1 flex justify-between items-center">
+                        <span data-i18n="available_balance">Saldo Tersedia (Kas Bebas)</span>
+                        <i class="fa-solid fa-money-bill-wave text-emerald-400"></i>
+                    </div>
+                    <div id="saldoTersedia" class="text-lg sm:text-xl font-bold font-mono text-emerald-400">
+                        Rp 100.000.000
+                    </div>
+                    <p class="text-[10px] text-gray-500 mt-1">Siap digunakan untuk membuat transaksi baru</p>
+                </div>
+
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md">
+                    <div class="text-xs text-gray-400 mb-1 flex justify-between items-center">
+                        <span>Equity (Total Nilai Akun)</span>
+                        <i class="fa-solid fa-chart-pie text-indigo-400"></i>
+                    </div>
+                    <div id="saldoEquity" class="text-lg sm:text-xl font-bold font-mono text-white">
+                        Rp 100.000.000
+                    </div>
+                    <p class="text-[10px] text-gray-500 mt-1">Saldo Kas + Estimasi PnL Berjalan</p>
+                </div>
+
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md">
+                    <div class="text-xs text-gray-400 mb-1 flex justify-between items-center">
+                        <span>Margin Terpakai (Jaminan)</span>
+                        <i class="fa-solid fa-lock text-amber-400"></i>
+                    </div>
+                    <div id="saldoMargin" class="text-lg sm:text-xl font-bold font-mono text-amber-300">
+                        Rp 0
+                    </div>
+                    <p class="text-[10px] text-gray-500 mt-1">Modal yang sedang dikunci pada posisi aktif</p>
+                </div>
+
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md">
+                    <div class="text-xs text-gray-400 mb-1 flex justify-between items-center">
+                        <span>Total Unrealized PnL</span>
+                        <i class="fa-solid fa-scale-balanced text-blue-400"></i>
+                    </div>
+                    <div id="saldoPnl" class="text-lg sm:text-xl font-bold font-mono text-gray-300">
+                        Rp 0 (0.00%)
+                    </div>
+                    <p class="text-[10px] text-gray-500 mt-1">Keuntungan / Kerugian dari posisi terbuka</p>
+                </div>
+
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md">
+                    <div class="text-xs text-gray-400 mb-1 flex justify-between items-center">
+                        <span>Nilai Posisi Berjalan</span>
+                        <i class="fa-brands fa-bitcoin text-amber-500"></i>
+                    </div>
+                    <div id="saldoPositionValue" class="text-lg sm:text-xl font-bold font-mono text-white">
+                        Rp 0
+                    </div>
+                    <p class="text-[10px] text-gray-500 mt-1">Total volume transaksi BTC yang dikontrol</p>
+                </div>
+
+            </div>
+
+            <!-- FORM ISI SALDO VIRTUAL IN MENU SALDO -->
+            <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-lg space-y-4">
+                <div class="flex items-center justify-between border-b border-figBorder pb-2.5">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                            <i class="fa-solid fa-circle-plus text-sm"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-sm text-white">Isi Saldo FIG</h3>
+                            <p class="text-[11px] text-gray-400">Tambah saldo secara bebas tanpa batas</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Auth & PIN Guard Banner -->
+                <div id="topUpGuardBanner" class="hidden bg-amber-950/40 border border-amber-800/50 rounded-xl p-3 text-xs text-amber-300 flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <i id="topUpGuardIcon" class="fa-solid fa-lock text-amber-400 text-base shrink-0"></i>
+                        <span id="topUpGuardMsg">Silakan login atau buat akun terlebih dahulu untuk menggunakan Isi Saldo.</span>
+                    </div>
+                    <button id="topUpGuardBtn" onclick="openAuthModal()" class="shrink-0 bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition">
+                        Login Sekarang
+                    </button>
+                </div>
+
+                <!-- Step 1 & 2 Form -->
+                <form id="topUpMainForm" onsubmit="handleStartTopUpFlow(event)" class="space-y-3 text-xs">
+                    <div>
+                        <label class="block text-gray-300 font-semibold mb-1">Nominal Top Up (Rupiah):</label>
+                        <div class="relative mb-1.5">
+                            <span class="absolute left-3 top-2.5 text-xs text-gray-400 font-mono">Rp</span>
+                            <input type="number" id="inputCustomNominal" min="10000" step="10000" required placeholder="Contoh: 500000" oninput="updateNominalPreview()" class="w-full bg-figDark border border-figBorder rounded-xl pl-9 pr-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-emerald-500">
+                        </div>
+                        <div id="nominalPreviewText" class="text-[11px] text-emerald-400 font-mono mb-2">Rp 0</div>
+
+                        <!-- Quick Preset Nominal Buttons -->
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                            <button type="button" onclick="setPresetNominal(100000)" class="bg-figDark hover:bg-gray-800 border border-figBorder text-gray-300 py-1.5 rounded-lg text-xs font-mono transition">Rp 100.000</button>
+                            <button type="button" onclick="setPresetNominal(500000)" class="bg-figDark hover:bg-gray-800 border border-figBorder text-gray-300 py-1.5 rounded-lg text-xs font-mono transition">Rp 500.000</button>
+                            <button type="button" onclick="setPresetNominal(1000000)" class="bg-figDark hover:bg-gray-800 border border-figBorder text-gray-300 py-1.5 rounded-lg text-xs font-mono transition">Rp 1.000.000</button>
+                            <button type="button" onclick="setPresetNominal(10000000)" class="bg-figDark hover:bg-gray-800 border border-figBorder text-gray-300 py-1.5 rounded-lg text-xs font-mono transition">Rp 10.000.000</button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-gray-300 font-semibold mb-1.5">Pilih Metode Pembayaran:</label>
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <label class="cursor-pointer">
+                                <input type="radio" name="topUpPayMethod" value="BCA" checked class="peer hidden">
+                                <div class="p-2.5 rounded-xl border border-figBorder bg-figDark peer-checked:border-emerald-500 peer-checked:bg-emerald-950/40 text-center font-bold text-gray-300 peer-checked:text-emerald-400 transition flex flex-col items-center justify-center space-y-1">
+                                    <i class="fa-solid fa-building-columns text-sm"></i>
+                                    <span>BCA</span>
+                                </div>
+                            </label>
+                            <label class="cursor-pointer">
+                                <input type="radio" name="topUpPayMethod" value="BSI" class="peer hidden">
+                                <div class="p-2.5 rounded-xl border border-figBorder bg-figDark peer-checked:border-emerald-500 peer-checked:bg-emerald-950/40 text-center font-bold text-gray-300 peer-checked:text-emerald-400 transition flex flex-col items-center justify-center space-y-1">
+                                    <i class="fa-solid fa-kaaba text-sm"></i>
+                                    <span>BSI</span>
+                                </div>
+                            </label>
+                            <label class="cursor-pointer">
+                                <input type="radio" name="topUpPayMethod" value="DANA" class="peer hidden">
+                                <div class="p-2.5 rounded-xl border border-figBorder bg-figDark peer-checked:border-emerald-500 peer-checked:bg-emerald-950/40 text-center font-bold text-gray-300 peer-checked:text-emerald-400 transition flex flex-col items-center justify-center space-y-1">
+                                    <i class="fa-solid fa-wallet text-sm"></i>
+                                    <span>DANA</span>
+                                </div>
+                            </label>
+                            <label class="cursor-pointer">
+                                <input type="radio" name="topUpPayMethod" value="GoPay" class="peer hidden">
+                                <div class="p-2.5 rounded-xl border border-figBorder bg-figDark peer-checked:border-emerald-500 peer-checked:bg-emerald-950/40 text-center font-bold text-gray-300 peer-checked:text-emerald-400 transition flex flex-col items-center justify-center space-y-1">
+                                    <i class="fa-solid fa-mobile-screen-button text-sm"></i>
+                                    <span>GoPay</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3 rounded-xl shadow-lg shadow-emerald-950/50 flex items-center justify-center space-x-2 text-sm transition transform active:scale-98">
+                        <i class="fa-solid fa-circle-check"></i>
+                        <span>Konfirmasi Isi Saldo</span>
+                    </button>
+                </form>
+            </div>
+
+        </section>
+
+        <!-- ==================== 4. HALAMAN RIWAYAT TRANSAKSI ==================== -->
+        <section id="pageRiwayat" class="space-y-3 hidden">
+            <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-bold text-white flex items-center space-x-2">
+                        <i class="fa-solid fa-clock-rotate-left text-indigo-400"></i>
+                        <span data-i18n="history_title">Riwayat Transaksi &amp; Keuangan</span>
+                    </h2>
+                    <p class="text-xs text-gray-400">Catatan lengkap Isi Saldo virtual &amp; hasil trading yang selesai</p>
+                </div>
+            </div>
+
+            <div class="bg-figCard border border-figBorder rounded-xl p-3 sm:p-4 shadow-md overflow-x-auto">
+                <table class="w-full text-left text-xs text-gray-300 font-mono">
+                    <thead class="bg-figDark text-gray-400 uppercase text-[10px]">
+                        <tr>
+                            <th class="p-2.5">Waktu</th>
+                            <th class="p-2.5">Kategori / Jenis</th>
+                            <th class="p-2.5">Detail Transaksi</th>
+                            <th class="p-2.5">Nominal / Total</th>
+                            <th class="p-2.5 text-right">Hasil / Profit / Loss</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tradeHistoryTableBody" class="divide-y divide-figBorder/50">
+                        <tr>
+                            <td colspan="5" class="p-8 text-center text-gray-500 font-sans">
+                                <i class="fa-solid fa-receipt text-3xl mb-2 block"></i>
+                                Belum ada riwayat transaksi selesai.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== 5. HALAMAN BANTUAN / BELAJAR ==================== -->
+        <section id="pageBelajar" class="space-y-4 hidden">
+            <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-indigo-600/30 border border-indigo-500/50 flex items-center justify-center text-indigo-400 text-xl shrink-0">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                </div>
+                <div>
+                    <h2 class="text-base font-bold text-white" data-i18n="learn_title">Pojok Belajar FIG Trading</h2>
+                    <p class="text-xs text-gray-400" data-i18n="learn_sub">Panduan Istilah-Istilah Utama Trading Dalam Bahasa Sederhana</p>
+                </div>
+            </div>
+
+            <!-- CARD: KALAU SUDAH BISA TRADING -->
+            <div class="bg-gradient-to-r from-indigo-950/60 via-figCard to-blue-950/60 border border-indigo-500/40 rounded-xl p-4 space-y-2 shadow-lg relative overflow-hidden">
+                <div class="flex items-center space-x-2 text-amber-400 font-extrabold text-sm border-b border-indigo-500/30 pb-2">
+                    <i class="fa-solid fa-compass text-base"></i>
+                    <span>Kalau Sudah Bisa Trading</span>
+                </div>
+                <p class="text-gray-200 text-xs sm:text-sm leading-relaxed">
+                    Kalau kamu sudah memahami dasar-dasar trading dan ingin mencoba trading asli, pastikan kamu sudah benar-benar memahami risikonya, menggunakan platform yang resmi dan sesuai aturan yang berlaku, serta jangan menggunakan uang yang tidak siap untuk kehilangan.
+                </p>
+                <div class="bg-figDark/80 rounded-lg p-2.5 border border-indigo-500/20 text-[11px] text-gray-400 italic">
+                    FIG dibuat sebagai tempat latihan agar kamu bisa belajar mengelola uang dan mengambil keputusan sebelum mengenal trading yang sebenarnya.
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm">
+
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 space-y-1.5">
+                    <div class="font-bold text-emerald-400 flex items-center space-x-2">
+                        <i class="fa-solid fa-circle-arrow-up text-base"></i>
+                        <span>1. BUY / LONG (Beli Naik)</span>
+                    </div>
+                    <p class="text-gray-300 text-xs">
+                        Anda memilih <strong>BUY / Long</strong> ketika memprediksi harga Bitcoin akan <strong>NAIK</strong>.
+                    </p>
+                </div>
+
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 space-y-1.5">
+                    <div class="font-bold text-rose-400 flex items-center space-x-2">
+                        <i class="fa-solid fa-circle-arrow-down text-base"></i>
+                        <span>2. SELL / SHORT (Jual Turun)</span>
+                    </div>
+                    <p class="text-gray-300 text-xs">
+                        Anda memilih <strong>SELL / Short</strong> ketika memprediksi harga Bitcoin akan <strong>TURUN</strong>.
+                    </p>
+                </div>
+
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 space-y-1.5">
+                    <div class="font-bold text-amber-400 flex items-center space-x-2">
+                        <i class="fa-solid fa-list-check text-base"></i>
+                        <span>3. Market Order vs Limit Order</span>
+                    </div>
+                    <ul class="list-disc list-inside space-y-1 text-gray-300 text-xs">
+                        <li><strong>Market Order:</strong> Transaksi langsung diproses seketika itu juga pada harga pasar saat ini.</li>
+                        <li><strong>Limit Order:</strong> Pesanan tertunda pada harga spesifik.</li>
+                    </ul>
+                </div>
+
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 space-y-1.5">
+                    <div class="font-bold text-indigo-400 flex items-center space-x-2">
+                        <i class="fa-solid fa-shield-halved text-base"></i>
+                        <span>4. Stop Loss &amp; Take Profit</span>
+                    </div>
+                    <ul class="list-disc list-inside space-y-1 text-gray-300 text-xs">
+                        <li><strong>Take Profit (TP):</strong> Pengunci keuntungan otomatis.</li>
+                        <li><strong>Stop Loss (SL):</strong> Batas kerugian otomatis.</li>
+                    </ul>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ==================== 6. HALAMAN PENGATURAN ==================== -->
+        <section id="pagePengaturan" class="space-y-4 hidden">
+            
+            <div class="bg-figCard border border-figBorder rounded-xl p-4 shadow-md flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-500/50 flex items-center justify-center text-blue-400 text-xl shrink-0">
+                    <i class="fa-solid fa-sliders"></i>
+                </div>
+                <div>
+                    <h2 class="text-base font-bold text-white" data-i18n="settings_header">Pengaturan Aplikasi FIG</h2>
+                    <p class="text-xs text-gray-400" data-i18n="settings_sub">Kelola bahasa dan keamanan PIN aplikasi</p>
+                </div>
+            </div>
+
+            <!-- Quick Status Overview Cards -->
+            <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="bg-figCard border border-figBorder rounded-xl p-3">
+                    <div class="text-[10px] text-gray-500 font-medium" data-i18n="active_lang_label">Bahasa</div>
+                    <div id="statusLangDisplay" class="font-bold text-blue-400 text-sm mt-0.5">Indonesia</div>
+                </div>
+                <div class="bg-figCard border border-figBorder rounded-xl p-3">
+                    <div class="text-[10px] text-gray-500 font-medium" data-i18n="pin_status_label">Status PIN</div>
+                    <div id="statusPinDisplay" class="font-bold text-amber-400 text-sm mt-0.5">Belum Dibuat</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                <!-- A. BAHASA SETTINGS -->
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 space-y-3">
+                    <div class="flex items-center space-x-2 text-white font-bold border-b border-figBorder pb-2">
+                        <i class="fa-solid fa-language text-blue-400"></i>
+                        <span data-i18n="lang_setting_title">A. Bahasa Interface</span>
+                    </div>
+                    <p class="text-xs text-gray-400" data-i18n="lang_setting_desc">Pilih bahasa tampilan sesuai kenyamanan Anda.</p>
+                    
+                    <div class="space-y-2">
+                        <button onclick="setLanguage('id')" id="langOpt-id" class="w-full flex items-center justify-between p-2.5 rounded-xl border border-blue-500 bg-blue-900/30 text-white font-semibold text-xs transition">
+                            <span class="flex items-center space-x-2">
+                                <span>🇮🇩</span>
+                                <span>Indonesia (Default)</span>
+                            </span>
+                            <i id="langCheck-id" class="fa-solid fa-check text-blue-400"></i>
+                        </button>
+                        <button onclick="setLanguage('en')" id="langOpt-en" class="w-full flex items-center justify-between p-2.5 rounded-xl border border-figBorder bg-figDark text-gray-300 font-semibold text-xs transition hover:bg-gray-800">
+                            <span class="flex items-center space-x-2">
+                                <span>🇺🇸</span>
+                                <span>English</span>
+                            </span>
+                            <i id="langCheck-en" class="fa-solid fa-check text-blue-400 hidden"></i>
+                        </button>
+                        <button onclick="setLanguage('es')" id="langOpt-es" class="w-full flex items-center justify-between p-2.5 rounded-xl border border-figBorder bg-figDark text-gray-300 font-semibold text-xs transition hover:bg-gray-800">
+                            <span class="flex items-center space-x-2">
+                                <span>🇪🇸</span>
+                                <span>Español</span>
+                            </span>
+                            <i id="langCheck-es" class="fa-solid fa-check text-blue-400 hidden"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- B. PIN SETTINGS (NUMERIC KEYPAD FOR MOBILE) -->
+                <div class="bg-figCard border border-figBorder rounded-xl p-4 space-y-3">
+                    <div class="flex items-center space-x-2 text-white font-bold border-b border-figBorder pb-2">
+                        <i class="fa-solid fa-key text-amber-400"></i>
+                        <span data-i18n="pin_setting_title">B. Pengaturan PIN Keamanan</span>
+                    </div>
+                    <p class="text-xs text-gray-400" data-i18n="pin_setting_desc">PIN digunakan sebagai proteksi konfirmasi saat menambah saldo di Menu Saldo.</p>
+
+                    <form onsubmit="handleSavePin(event)" class="space-y-2 text-xs">
+                        <div id="oldPinGroup" class="hidden">
+                            <label class="block text-gray-400 mb-1" data-i18n="pin_old_label">PIN Lama:</label>
+                            <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" id="inputOldPin" placeholder="******" class="w-full bg-figDark border border-figBorder rounded-lg px-3 py-2 font-mono text-white focus:outline-none focus:border-blue-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-gray-400 mb-1" id="lblNewPin" data-i18n="pin_new_label">PIN Baru (6 Angka):</label>
+                            <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" id="inputNewPin" required placeholder="******" class="w-full bg-figDark border border-figBorder rounded-lg px-3 py-2 font-mono text-white focus:outline-none focus:border-blue-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-gray-400 mb-1" data-i18n="pin_confirm_label">Konfirmasi PIN Baru:</label>
+                            <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" id="inputConfirmPin" required placeholder="******" class="w-full bg-figDark border border-figBorder rounded-lg px-3 py-2 font-mono text-white focus:outline-none focus:border-blue-500">
+                        </div>
+
+                        <button type="submit" id="btnSavePinText" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-extrabold py-2.5 rounded-xl shadow transition mt-1">
+                            Simpan PIN Baru
+                        </button>
+                    </form>
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- MODAL 1: LOGIN / REGISTRASI & TENTANG WEB INI -->
+    <div id="modalAuth" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-3 hidden overflow-y-auto">
+        <div class="bg-figCard border border-figBorder rounded-2xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 my-auto relative max-h-[90vh] overflow-y-auto">
+            <div class="text-center space-y-1">
+                <div class="w-12 h-12 bg-blue-600/20 border border-blue-500/40 rounded-2xl flex items-center justify-center mx-auto text-blue-400 text-xl mb-1">
+                    <i class="fa-solid fa-user-plus"></i>
+                </div>
+                <h3 class="text-lg font-black text-white">Masuk / Buat Akun FIG</h3>
+                <p class="text-xs text-gray-400">Data tersimpan di cloud &amp; tersinkron di semua perangkat</p>
+            </div>
+
+            <!-- LOGIN FORM WITH AUTO-UPPERCASE NAME -->
+            <form onsubmit="handleAuthSubmit(event)" class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-1">Nama Lengkap:</label>
+                    <input type="text" id="inputAuthName" required placeholder="Contoh: BAGAS" oninput="this.value = this.value.toUpperCase()" class="w-full bg-figDark border border-figBorder rounded-xl px-3 py-2.5 text-xs text-white uppercase focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-1">Nomor HP (Identitas Login Multi-Device):</label>
+                    <input type="tel" id="inputAuthPhone" required placeholder="Contoh: 081234567890" class="w-full bg-figDark border border-figBorder rounded-xl px-3 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div class="flex space-x-2 pt-1">
+                    <button type="button" onclick="closeAuthModalGuest()" class="w-1/3 bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold py-2.5 rounded-xl transition text-xs">
+                        Nanti Saja
+                    </button>
+                    <button type="submit" class="w-2/3 bg-blue-600 hover:bg-blue-500 text-white font-extrabold py-2.5 rounded-xl shadow-lg transition text-xs flex items-center justify-center space-x-1.5">
+                        <i class="fa-solid fa-right-to-bracket"></i>
+                        <span>Masuk / Buat Akun</span>
+                    </button>
+                </div>
+            </form>
+
+            <!-- TENTANG WEB INI ACCORDION SECTION -->
+            <div class="border-t border-figBorder pt-3 text-xs space-y-2">
+                <button type="button" onclick="toggleAboutSection()" class="w-full flex items-center justify-between text-gray-300 hover:text-white font-bold p-2 bg-figDark rounded-xl border border-figBorder">
+                    <span class="flex items-center space-x-2">
+                        <i class="fa-solid fa-circle-info text-blue-400"></i>
+                        <span>Tentang Web Ini</span>
+                    </span>
+                    <i id="aboutChevron" class="fa-solid fa-chevron-down text-gray-400 text-xs transition-transform duration-200"></i>
+                </button>
+
+                <div id="aboutContentBox" class="hidden bg-figDark/80 border border-figBorder/80 rounded-xl p-3 text-[11px] text-gray-300 space-y-2 leading-relaxed max-h-56 overflow-y-auto">
+                    <p>
+                        <strong class="text-blue-400">FIG</strong> adalah web yang dikembangkan oleh <strong>4ndre</strong>. Web ini bertujuan untuk melatih kemampuan trading kamu, mengelola uang virtual, dan belajar mengambil keputusan.
+                    </p>
+                    <p>
+                        FIG dibuat dengan tampilan dan pengalaman seperti akun trading sungguhan agar kamu dapat beradaptasi dengan tampilan aplikasi/web trading. Namun seluruh saldo, transaksi, dan aktivitas di dalam FIG tetap bersifat virtual dan tidak menggunakan uang nyata.
+                    </p>
+                    <div>
+                        <strong class="text-gray-200 block mb-1">Fitur yang terdapat di FIG:</strong>
+                        <ul class="list-disc list-inside space-y-0.5 text-gray-400 text-[10.5px]">
+                            <li>Trading BTC/IDR dengan harga simulasi</li>
+                            <li>Chart candlestick</li>
+                            <li>Buy dan Sell</li>
+                            <li>Long dan Short</li>
+                            <li>Market Order &amp; Limit Order</li>
+                            <li>Stop Loss &amp; Take Profit</li>
+                            <li>Close Position</li>
+                            <li>Perhitungan PnL &amp; Total Unrealized PnL</li>
+                            <li>Saldo virtual &amp; Isi saldo virtual dengan nominal custom</li>
+                            <li>Riwayat transaksi &amp; Riwayat posisi</li>
+                            <li>Profil pengguna &amp; Foto profil</li>
+                            <li>PIN aplikasi &amp; Pengaturan akun</li>
+                            <li>Pilihan bahasa Indonesia, English, dan Español</li>
+                            <li>Fitur pembelajaran trading</li>
+                        </ul>
+                    </div>
+                    <div class="pt-1 border-t border-figBorder/60 text-[10.5px]">
+                        <p class="text-gray-400">Jika ada masalah atau punya usulan, kamu bisa mengirim pesan ke Gmail pribadi saya:</p>
+                        <a href="mailto:ziroandre937@gmail.com" class="text-blue-400 font-mono font-bold hover:underline">ziroandre937@gmail.com</a>
+                        <p class="mt-1 text-gray-300 italic">Makasih sudah percaya dan menggunakan FIG.</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- MODAL 2: TAMPILAN PROFIL AKUN & UBAH FOTO -->
+    <div id="modalProfile" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 hidden">
+        <div class="bg-figCard border border-figBorder rounded-2xl max-w-md w-full p-4 shadow-2xl space-y-4 relative">
+            <button type="button" onclick="closeProfileModal()" class="absolute right-3 top-3 text-gray-400 hover:text-white">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+
+            <div class="flex items-center space-x-2 text-blue-400 font-extrabold text-base border-b border-figBorder pb-2">
+                <i class="fa-solid fa-id-card"></i>
+                <span>Profil Akun FIG</span>
+            </div>
+
+            <!-- Profile Info Display Card -->
+            <div id="profileLoggedInContent" class="bg-figDark border border-figBorder rounded-xl p-4 text-center space-y-3">
+                <div class="relative w-20 h-20 mx-auto">
+                    <div id="profileModalAvatarContainer" class="w-full h-full rounded-2xl bg-blue-600/30 border-2 border-blue-500/50 flex items-center justify-center overflow-hidden shadow-inner">
+                        <i id="profileModalDefaultIcon" class="fa-solid fa-user text-blue-400 text-3xl"></i>
+                        <img id="profileModalImg" src="" alt="Foto Profil" class="w-full h-full object-cover hidden">
+                    </div>
+                </div>
+
+                <div>
+                    <h4 id="displayProfileName" class="text-base font-extrabold text-white uppercase">GUEST USER</h4>
+                    <p id="displayProfilePhone" class="text-xs text-gray-400 font-mono">08xxxxxxxxxx</p>
+                </div>
+
+                <input type="file" id="inputPhotoPicker" accept="image/*" onchange="handlePhotoSelected(event)" class="hidden">
+
+                <!-- Photo Management Buttons -->
+                <div class="grid grid-cols-2 gap-2 pt-2 border-t border-figBorder/60">
+                    <button type="button" onclick="triggerPhotoUpload()" class="bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/50 font-bold py-2 px-3 rounded-xl transition text-xs flex items-center justify-center space-x-1">
+                        <i class="fa-solid fa-camera"></i>
+                        <span>Ubah Foto Profil</span>
+                    </button>
+                    <button type="button" onclick="removeProfilePhoto()" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 font-bold py-2 px-3 rounded-xl transition text-xs flex items-center justify-center space-x-1">
+                        <i class="fa-solid fa-trash"></i>
+                        <span>Hapus Foto</span>
+                    </button>
+                </div>
+
+                <div class="pt-2">
+                    <button type="button" onclick="handleLogout()" class="w-full bg-gray-800 hover:bg-rose-950/60 text-rose-400 hover:text-rose-300 border border-gray-700 hover:border-rose-800 font-bold py-2 rounded-xl transition text-xs flex items-center justify-center space-x-1.5">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                        <span>Logout / Keluar Akun</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Profile Guest Fallback State -->
+            <div id="profileGuestContent" class="hidden bg-figDark border border-figBorder rounded-xl p-5 text-center space-y-3">
+                <i class="fa-solid fa-circle-user text-gray-500 text-4xl"></i>
+                <div>
+                    <h4 class="text-sm font-bold text-white">Anda Belum Login</h4>
+                    <p class="text-xs text-gray-400">Login untuk mengakses profil, simpan histori &amp; fitur Isi Saldo.</p>
+                </div>
+                <button type="button" onclick="closeProfileModal(); openAuthModal();" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-extrabold py-2.5 rounded-xl transition text-xs">
+                    Masuk / Buat Akun
+                </button>
+            </div>
+
+            <button type="button" onclick="closeProfileModal()" class="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold py-2.5 rounded-xl transition text-xs">
+                Tutup
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL 3: KONFIRMASI PIN ISI SALDO -->
+    <div id="modalPinConfirm" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 hidden">
+        <div class="bg-figCard border border-figBorder rounded-2xl max-w-md w-full p-4 shadow-2xl space-y-4 relative">
+            <button type="button" onclick="closePinConfirmModal()" class="absolute right-3 top-3 text-gray-400 hover:text-white">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+
+            <div class="flex items-center space-x-2 text-emerald-400 font-extrabold text-base border-b border-figBorder pb-2">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>Konfirmasi PIN Isi Saldo</span>
+            </div>
+
+            <div class="bg-figDark border border-figBorder rounded-xl p-3 text-xs space-y-1.5 font-mono">
+                <div class="flex justify-between text-gray-400">
+                    <span>Metode Pembayaran:</span>
+                    <span id="summaryPayMethod" class="font-bold text-white">BCA</span>
+                </div>
+                <div class="flex justify-between text-gray-400">
+                    <span>Nominal:</span>
+                    <span id="summaryNominal" class="font-bold text-emerald-400 text-sm">Rp 500.000</span>
+                </div>
+            </div>
+
+            <form onsubmit="handleExecuteTopUpWithPin(event)" class="space-y-3">
+                <div>
+                    <label class="block text-xs text-gray-300 font-semibold mb-1">Masukkan PIN Aplikasi (6 Angka):</label>
+                    <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" id="inputPinExecution" required placeholder="******" class="w-full bg-figDark border border-figBorder rounded-xl px-3 py-2.5 font-mono text-center text-xl tracking-widest text-white focus:outline-none focus:border-emerald-500">
+                </div>
+
+                <div class="flex space-x-2">
+                    <button type="button" onclick="closePinConfirmModal()" class="w-1/3 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold py-2.5 rounded-xl transition text-xs">
+                        Batal
+                    </button>
+                    <button type="submit" class="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-2.5 rounded-xl shadow transition text-xs flex items-center justify-center space-x-1">
+                        <i class="fa-solid fa-check-circle"></i>
+                        <span>Proses Saldo</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- CUSTOM TOAST NOTIFICATION CONTAINER -->
+    <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+    <script>
+        const INITIAL_BALANCE = 100000000;
+        let userState = {
+            balance: INITIAL_BALANCE,
+            openPositions: [],
+            pendingOrders: [],
+            history: [],
+            language: 'id',
+            pinHash: null, // SHA-256 Hashed PIN for Security
+            profile: {
+                name: 'GUEST USER',
+                phone: '081234567890',
+                photo: null,
+                isLoggedIn: false
+            }
+        };
+
+        let pendingTopUp = { nominal: 0, method: 'BCA' };
+        let hasSeenWelcomeModal = false;
+
+        const I18N_DICT = {
+            id: {
+                nav_trading: "Trading",
+                nav_posisi: "Posisi",
+                nav_saldo: "Saldo",
+                nav_riwayat: "Riwayat Transaksi",
+                nav_belajar: "Bantuan / Belajar",
+                nav_pengaturan: "Pengaturan",
+                current_price_label: "Harga Saat Ini:",
+                up: "Naik",
+                down: "Turun",
+                order_panel_title: "Panel Order Transaction",
+                limit_price_label: "Harga Target Limit (IDR):",
+                btc_amount_label: "Jumlah Bitcoin (BTC):",
+                max: "Maks",
+                total_trade_val: "Total Nilai Transaksi:",
+                required_margin: "Margin Dibutuhkan:",
+                sl_tp_protection: "Pengatur Proteksi (SL & TP Opsional):",
+                trading_pnl_summary: "Total Unrealized PnL:",
+                positions_title: "Posisi Transaksi Terbuka",
+                positions_sub: "Daftar transaksi aktif yang sedang berjalan real-time",
+                saldo_title: "Ringkasan Saldo & Aset Akun",
+                saldo_sub: "Manajemen dana Rupiah (IDR)",
+                initial_balance: "Saldo Awal",
+                available_balance: "Saldo Tersedia (Kas Bebas)",
+                history_title: "Riwayat Transaksi & Keuangan",
+                learn_title: "Pojok Belajar FIG Trading",
+                learn_sub: "Panduan Istilah-Istilah Utama Trading Dalam Bahasa Sederhana",
+                settings_header: "Pengaturan Aplikasi FIG",
+                settings_sub: "Kelola bahasa dan keamanan PIN aplikasi",
+                active_lang_label: "Bahasa",
+                pin_status_label: "Status PIN",
+                lang_setting_title: "A. Bahasa Interface",
+                lang_setting_desc: "Pilih bahasa tampilan sesuai kenyamanan Anda.",
+                pin_setting_title: "B. Pengaturan PIN Keamanan",
+                pin_setting_desc: "PIN digunakan sebagai proteksi konfirmasi saat menambah saldo di Menu Saldo.",
+                pin_old_label: "PIN Lama:",
+                pin_new_label: "PIN Baru (6 Angka):",
+                pin_confirm_label: "Konfirmasi PIN Baru:"
+            },
+            en: {
+                nav_trading: "Trading",
+                nav_posisi: "Positions",
+                nav_saldo: "Balance",
+                nav_riwayat: "Trade History",
+                nav_belajar: "Help / Learn",
+                nav_pengaturan: "Settings",
+                current_price_label: "Current Price:",
+                up: "Up",
+                down: "Down",
+                order_panel_title: "Transaction Order Panel",
+                limit_price_label: "Limit Target Price (IDR):",
+                btc_amount_label: "Bitcoin Amount (BTC):",
+                max: "Max",
+                total_trade_val: "Total Nominal:",
+                required_margin: "Required Margin:",
+                sl_tp_protection: "Protection Config (SL & TP Optional):",
+                trading_pnl_summary: "Total Unrealized PnL:",
+                positions_title: "Open Positions",
+                positions_sub: "List of active positions running real-time",
+                saldo_title: "Balance & Account Assets",
+                saldo_sub: "Rupiah (IDR) fund management",
+                initial_balance: "Initial Balance",
+                available_balance: "Available Balance",
+                history_title: "Financial & Trade History",
+                learn_title: "FIG Trading Learning Corner",
+                learn_sub: "Simple guides for trading terminology",
+                settings_header: "FIG App Settings",
+                settings_sub: "Manage language and PIN security",
+                active_lang_label: "Language",
+                pin_status_label: "PIN Status",
+                lang_setting_title: "A. Interface Language",
+                lang_setting_desc: "Choose interface display language.",
+                pin_setting_title: "B. PIN Security Settings",
+                pin_setting_desc: "PIN is required for top-up authorization in Saldo menu.",
+                pin_old_label: "Old PIN:",
+                pin_new_label: "New PIN (6 Digits):",
+                pin_confirm_label: "Confirm New PIN:"
+            },
+            es: {
+                nav_trading: "Trading",
+                nav_posisi: "Posiciones",
+                nav_saldo: "Saldo",
+                nav_riwayat: "Historial",
+                nav_belajar: "Aprender",
+                nav_pengaturan: "Ajustes",
+                current_price_label: "Precio Actual:",
+                up: "Sube",
+                down: "Baja",
+                order_panel_title: "Panel de Órdenes",
+                limit_price_label: "Precio Límite Objetivo (IDR):",
+                btc_amount_label: "Cantidad Bitcoin (BTC):",
+                max: "Máx",
+                total_trade_val: "Valor Total:",
+                required_margin: "Margen Requerido:",
+                sl_tp_protection: "Protección (SL y TP Opcional):",
+                trading_pnl_summary: "PnL No Realizado Total:",
+                positions_title: "Posiciones Abiertas",
+                positions_sub: "Lista de transacciones activas en tiempo real",
+                saldo_title: "Resumen de Saldo y Activos",
+                saldo_sub: "Gestión de fondos en rupias (IDR)",
+                initial_balance: "Saldo Inicial",
+                available_balance: "Saldo Disponible",
+                history_title: "Historial de Transacciones",
+                learn_title: "Rincón de Aprendizaje FIG",
+                learn_sub: "Guía simplificada de términos de trading",
+                settings_header: "Ajustes de Aplicación FIG",
+                settings_sub: "Gestione idioma y PIN de seguridad",
+                active_lang_label: "Idioma",
+                pin_status_label: "Estado de PIN",
+                lang_setting_title: "A. Idioma de Interfaz",
+                lang_setting_desc: "Elija el idioma de visualización deseado.",
+                pin_setting_title: "B. Configuración de PIN",
+                pin_setting_desc: "El PIN se requiere para confirmar recargas di el menú Saldo.",
+                pin_old_label: "PIN Anterior:",
+                pin_new_label: "Nuevo PIN (6 Dígitos):",
+                pin_confirm_label: "Confirmar Nuevo PIN:"
+            }
+        };
+
+        // Price Engine State
+        let btcPrice = 1680000000;
+        let prevPrice = btcPrice;
+        let high24h = 1710000000;
+        let priceHistory = [];
+        let currentCandle = null;
+        let volatility = 0.0015;
+        let simInterval = null;
+
+        let selectedSide = 'BUY';
+        let orderType = 'MARKET';
+        let currentLeverage = 1;
+        let activeTab = 'trading';
+
+        let chartCanvas = null;
+        let chartCtx = null;
+        let selectedTimeframe = '1m';
+        let showEma = true;
+        let showVol = true;
+
+        // SHA-256 PIN Security Hash Helper
+        async function hashPin(pin) {
+            if (!pin) return null;
+            const encoder = new TextEncoder();
+            const data = encoder.encode(pin);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // ONLINE MULTI-DEVICE CLOUD DATABASE SYNC ENGINE (FIRESTORE)
+        window.syncWithCloudDatabase = function() {
+            if (!window.db || !window.firebaseModules || !window.firestoreSyncActive) return;
+            const { doc, onSnapshot, getDoc } = window.firebaseModules;
+            if (!doc || !onSnapshot) return;
+
+            // Unsubscribe existing snapshot listener if any
+            if (window.activeAccountUnsubscribe) {
+                window.activeAccountUnsubscribe();
+                window.activeAccountUnsubscribe = null;
+            }
+
+            const isUserLoggedIn = userState.profile && userState.profile.isLoggedIn && userState.profile.phone;
+            
+            // Generate clean account key based on sanitized Phone Number
+            let accountKey = isUserLoggedIn
+                ? 'acc_' + userState.profile.phone.replace(/[^0-9]/g, '')
+                : 'guest_' + (window.currentAuthUser ? window.currentAuthUser.uid : 'device');
+
+            try {
+                // Public collection document path compliant with Rule 1
+                const docRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'userAccounts', accountKey);
+
+                document.getElementById('syncBadge').classList.remove('hidden');
+
+                window.activeAccountUnsubscribe = onSnapshot(docRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const cloudData = docSnap.data();
+                        if (cloudData && cloudData.balance !== undefined) {
+                            userState = { ...userState, ...cloudData };
+                            applyLanguageUI();
+                            updateSettingsUI();
+                            updateAccountUI();
+                            updateProfileUI();
+                            renderPositionsTable();
+                            renderPendingOrdersTable();
+                            renderHistoryTable();
+                        }
+                    } else {
+                        saveUserData(); // Seed initial cloud document
+                    }
+                }, (error) => {
+                    console.warn("Firestore snapshot notice:", error);
+                });
+            } catch (e) {
+                console.warn("Firestore sync error:", e);
+            }
+        };
+
+        window.onload = function() {
+            chartCanvas = document.getElementById('tradingChart');
+            chartCtx = chartCanvas.getContext('2d');
+            
+            setTimeout(() => {
+                resizeCanvas();
+            }, 50);
+
+            window.addEventListener('resize', resizeCanvas);
+
+            generateInitialHistory();
+            loadUserData();
+            startPriceEngine();
+
+            applyLanguageUI();
+            updateSettingsUI();
+            updateAccountUI();
+            updateProfileUI();
+            calculateTradeValues();
+            renderPositionsTable();
+            renderPendingOrdersTable();
+            renderHistoryTable();
+
+            chartCanvas.addEventListener('mousemove', handleChartHover);
+
+            if (!hasSeenWelcomeModal && (!userState.profile || !userState.profile.isLoggedIn)) {
+                setTimeout(openAuthModal, 600);
+            }
+        };
+
+        // ================= USER ACCOUNT & PROFILE FUNCTIONS ================= //
+        function openAuthModal() {
+            document.getElementById('modalAuth').classList.remove('hidden');
+            if (userState.profile) {
+                document.getElementById('inputAuthName').value = userState.profile.name !== 'GUEST USER' ? userState.profile.name : '';
+                document.getElementById('inputAuthPhone').value = userState.profile.phone !== '081234567890' ? userState.profile.phone : '';
+            }
+        }
+
+        function closeAuthModalGuest() {
+            hasSeenWelcomeModal = true;
+            document.getElementById('modalAuth').classList.add('hidden');
+        }
+
+        function toggleAboutSection() {
+            const box = document.getElementById('aboutContentBox');
+            const chev = document.getElementById('aboutChevron');
+            if (box.classList.contains('hidden')) {
+                box.classList.remove('hidden');
+                chev.classList.add('rotate-180');
+            } else {
+                box.classList.add('hidden');
+                chev.classList.remove('rotate-180');
+            }
+        }
+
+        async function handleAuthSubmit(e) {
+            e.preventDefault();
+            const rawName = document.getElementById('inputAuthName').value.trim();
+            const phone = document.getElementById('inputAuthPhone').value.trim();
+
+            if (!rawName || !phone) {
+                showToast('Mohon isi nama lengkap & nomor HP!', 'error');
+                return;
+            }
+
+            const uppercaseName = rawName.toUpperCase();
+
+            userState.profile.name = uppercaseName;
+            userState.profile.phone = phone;
+            userState.profile.isLoggedIn = true;
+            hasSeenWelcomeModal = true;
+
+            saveUserData();
+            updateProfileUI();
+            updateAccountUI();
+
+            // Re-bind cloud database listener to new account Phone Key
+            if (typeof window.syncWithCloudDatabase === 'function') {
+                window.syncWithCloudDatabase();
+            }
+
+            document.getElementById('modalAuth').classList.add('hidden');
+            showToast(`Selamat datang, ${uppercaseName}! Akun tersambung secara Cloud Multi-Device.`, 'success');
+        }
+
+        function handleLogout() {
+            userState.profile.isLoggedIn = false;
+            userState.profile.name = 'GUEST USER';
+            userState.profile.phone = '081234567890';
+            userState.profile.photo = null;
+
+            saveUserData();
+            updateProfileUI();
+            updateAccountUI();
+            closeProfileModal();
+
+            if (typeof window.syncWithCloudDatabase === 'function') {
+                window.syncWithCloudDatabase();
+            }
+
+            showToast('Anda telah logout.', 'info');
+        }
+
+        function openProfileModal() {
+            updateProfileUI();
+            document.getElementById('modalProfile').classList.remove('hidden');
+        }
+
+        function closeProfileModal() {
+            document.getElementById('modalProfile').classList.add('hidden');
+        }
+
+        function updateProfileUI() {
+            const p = userState.profile || { name: 'GUEST USER', phone: '081234567890', photo: null, isLoggedIn: false };
+            
+            document.getElementById('headerProfileName').innerText = p.name || 'GUEST';
+
+            const headerDefaultIcon = document.getElementById('headerAvatarDefaultIcon');
+            const headerImg = document.getElementById('headerAvatarImg');
+            
+            const loggedInBox = document.getElementById('profileLoggedInContent');
+            const guestBox = document.getElementById('profileGuestContent');
+
+            if (p.isLoggedIn) {
+                loggedInBox.classList.remove('hidden');
+                guestBox.classList.add('hidden');
+
+                document.getElementById('displayProfileName').innerText = p.name || 'GUEST USER';
+                document.getElementById('displayProfilePhone').innerText = p.phone || '08xxxxxxxxxx';
+
+                const modalDefaultIcon = document.getElementById('profileModalDefaultIcon');
+                const modalImg = document.getElementById('profileModalImg');
+
+                if (p.photo) {
+                    headerDefaultIcon.classList.add('hidden');
+                    headerImg.classList.remove('hidden');
+                    headerImg.src = p.photo;
+
+                    modalDefaultIcon.classList.add('hidden');
+                    modalImg.classList.remove('hidden');
+                    modalImg.src = p.photo;
+                } else {
+                    headerImg.classList.add('hidden');
+                    headerDefaultIcon.classList.remove('hidden');
+
+                    modalImg.classList.add('hidden');
+                    modalDefaultIcon.classList.remove('hidden');
+                }
+            } else {
+                loggedInBox.classList.add('hidden');
+                guestBox.classList.remove('hidden');
+
+                headerImg.classList.add('hidden');
+                headerDefaultIcon.classList.remove('hidden');
+            }
+
+            checkTopUpGuardState();
+        }
+
+        function triggerPhotoUpload() {
+            document.getElementById('inputPhotoPicker').click();
+        }
+
+        function handlePhotoSelected(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (file.size > 1.5 * 1024 * 1024) {
+                showToast('Ukuran foto maksimal 1.5MB!', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                userState.profile.photo = evt.target.result;
+                saveUserData();
+                updateProfileUI();
+                showToast('Foto profil tersimpan dan tersinkron ke cloud!', 'success');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function removeProfilePhoto() {
+            userState.profile.photo = null;
+            saveUserData();
+            updateProfileUI();
+            showToast('Foto profil dikembalikan ke avatar default.', 'info');
+        }
+
+        // ================= BIDIRECTIONAL IDR / BTC INPUT CALCULATOR ================= //
+        function handleRupiahInputChanged() {
+            const rupiahVal = parseFloat(document.getElementById('inputRupiahAmount').value) || 0;
+            const limitPrice = parseFloat(document.getElementById('inputLimitPrice').value) || btcPrice;
+            const effectivePrice = orderType === 'LIMIT' ? limitPrice : btcPrice;
+
+            if (rupiahVal > 0 && effectivePrice > 0) {
+                const btcVal = rupiahVal / effectivePrice;
+                document.getElementById('inputBtcAmount').value = btcVal.toFixed(8);
+            } else {
+                document.getElementById('inputBtcAmount').value = '';
+            }
+            calculateTradeValues();
+        }
+
+        function handleBtcInputChanged() {
+            const btcVal = parseFloat(document.getElementById('inputBtcAmount').value) || 0;
+            const limitPrice = parseFloat(document.getElementById('inputLimitPrice').value) || btcPrice;
+            const effectivePrice = orderType === 'LIMIT' ? limitPrice : btcPrice;
+
+            if (btcVal > 0 && effectivePrice > 0) {
+                const rupiahVal = Math.round(btcVal * effectivePrice);
+                document.getElementById('inputRupiahAmount').value = rupiahVal;
+            } else {
+                document.getElementById('inputRupiahAmount').value = '';
+            }
+            calculateTradeValues();
+        }
+
+        function calculateTradeValues() {
+            const inputBtc = parseFloat(document.getElementById('inputBtcAmount').value) || 0;
+            const limitPrice = parseFloat(document.getElementById('inputLimitPrice').value) || btcPrice;
+            const effectivePrice = orderType === 'LIMIT' ? (limitPrice || btcPrice) : btcPrice;
+
+            const totalValue = Math.round(inputBtc * effectivePrice);
+            const requiredMargin = Math.round(totalValue / currentLeverage);
+
+            document.getElementById('calcTotalValue').innerText = formatIDR(totalValue);
+            document.getElementById('calcRequiredMargin').innerText = formatIDR(requiredMargin);
+        }
+
+        // ================= LANGUAGE & SETTINGS ================= //
+        function setLanguage(lang) {
+            userState.language = lang;
+            saveUserData();
+            applyLanguageUI();
+            updateSettingsUI();
+            showToast(`Bahasa diubah ke: ${lang.toUpperCase()}`, 'info');
+        }
+
+        function applyLanguageUI() {
+            const lang = userState.language || 'id';
+            const dict = I18N_DICT[lang] || I18N_DICT['id'];
+
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (dict[key]) {
+                    el.innerText = dict[key];
+                }
+            });
+
+            ['id', 'en', 'es'].forEach(l => {
+                const check = document.getElementById(`langCheck-${l}`);
+                const btn = document.getElementById(`langOpt-${l}`);
+                if (check && btn) {
+                    if (l === lang) {
+                        check.classList.remove('hidden');
+                        btn.className = "w-full flex items-center justify-between p-2.5 rounded-xl border border-blue-500 bg-blue-900/30 text-white font-semibold text-xs transition";
+                    } else {
+                        check.classList.add('hidden');
+                        btn.className = "w-full flex items-center justify-between p-2.5 rounded-xl border border-figBorder bg-figDark text-gray-300 font-semibold text-xs transition hover:bg-gray-800";
+                    }
+                }
+            });
+        }
+
+        function updateSettingsUI() {
+            const statusLangDisp = document.getElementById('statusLangDisplay');
+            const statusPinDisp = document.getElementById('statusPinDisplay');
+
+            if (statusLangDisp) {
+                statusLangDisp.innerText = userState.language === 'id' ? 'Indonesia' : userState.language === 'en' ? 'English' : 'Español';
+            }
+
+            if (statusPinDisp) {
+                if (userState.pinHash) {
+                    statusPinDisp.innerText = 'Sudah Aktif';
+                    statusPinDisp.className = 'font-bold text-emerald-400 text-sm mt-0.5';
+                    document.getElementById('oldPinGroup').classList.remove('hidden');
+                    document.getElementById('lblNewPin').innerText = 'PIN Baru (6 Angka):';
+                    document.getElementById('btnSavePinText').innerText = 'Ubah PIN Keamanan';
+                } else {
+                    statusPinDisp.innerText = 'Belum Dibuat';
+                    statusPinDisp.className = 'font-bold text-amber-400 text-sm mt-0.5';
+                    document.getElementById('oldPinGroup').classList.add('hidden');
+                    document.getElementById('lblNewPin').innerText = 'Buat PIN Baru (6 Angka):';
+                    document.getElementById('btnSavePinText').innerText = 'Buat PIN Keamanan Baru';
+                }
+            }
+
+            checkTopUpGuardState();
+        }
+
+        async function handleSavePin(e) {
+            e.preventDefault();
+            const oldPinInput = document.getElementById('inputOldPin').value;
+            const newPin = document.getElementById('inputNewPin').value;
+            const confirmPin = document.getElementById('inputConfirmPin').value;
+
+            if (userState.pinHash) {
+                const oldHash = await hashPin(oldPinInput);
+                if (oldHash !== userState.pinHash) {
+                    showToast('PIN Lama Anda salah!', 'error');
+                    return;
+                }
+            }
+
+            if (!/^\d{6}$/.test(newPin)) {
+                showToast('PIN harus berupa 6 digit angka!', 'error');
+                return;
+            }
+
+            if (newPin !== confirmPin) {
+                showToast('Konfirmasi PIN baru tidak cocok!', 'error');
+                return;
+            }
+
+            userState.pinHash = await hashPin(newPin);
+            saveUserData();
+            updateSettingsUI();
+            
+            document.getElementById('inputOldPin').value = '';
+            document.getElementById('inputNewPin').value = '';
+            document.getElementById('inputConfirmPin').value = '';
+
+            showToast('PIN Keamanan terenkripsi SHA-256 berhasil disimpan!', 'success');
+        }
+
+        // ================= ISI SALDO VIRTUAL FLOW ================= //
+        function checkTopUpGuardState() {
+            const guardBanner = document.getElementById('topUpGuardBanner');
+            const guardMsg = document.getElementById('topUpGuardMsg');
+            const guardBtn = document.getElementById('topUpGuardBtn');
+            const mainForm = document.getElementById('topUpMainForm');
+
+            if (!guardBanner || !mainForm) return;
+
+            const isLoggedIn = userState.profile && userState.profile.isLoggedIn;
+            const hasPin = !!userState.pinHash;
+
+            if (!isLoggedIn) {
+                guardBanner.classList.remove('hidden');
+                mainForm.classList.add('opacity-40', 'pointer-events-none');
+                guardMsg.innerText = 'Silakan login atau buat akun terlebih dahulu untuk menggunakan Isi Saldo.';
+                guardBtn.innerText = 'Login Sekarang';
+                guardBtn.setAttribute('onclick', 'openAuthModal()');
+            } else if (!hasPin) {
+                guardBanner.classList.remove('hidden');
+                mainForm.classList.add('opacity-40', 'pointer-events-none');
+                guardMsg.innerText = 'Silakan buat PIN terlebih dahulu untuk menggunakan Isi Saldo.';
+                guardBtn.innerText = 'Buat PIN';
+                guardBtn.setAttribute('onclick', 'switchAppTab("pengaturan")');
+            } else {
+                guardBanner.classList.add('hidden');
+                mainForm.classList.remove('opacity-40', 'pointer-events-none');
+            }
+        }
+
+        function updateNominalPreview() {
+            const val = parseFloat(document.getElementById('inputCustomNominal').value) || 0;
+            document.getElementById('nominalPreviewText').innerText = formatIDR(val);
+        }
+
+        function setPresetNominal(amt) {
+            document.getElementById('inputCustomNominal').value = amt;
+            updateNominalPreview();
+        }
+
+        function handleStartTopUpFlow(e) {
+            e.preventDefault();
+
+            if (!userState.profile || !userState.profile.isLoggedIn) {
+                showToast('Silakan login atau buat akun terlebih dahulu!', 'error');
+                openAuthModal();
+                return;
+            }
+
+            if (!userState.pinHash) {
+                showToast('Silakan buat PIN terlebih dahulu di Menu Pengaturan!', 'error');
+                switchAppTab('pengaturan');
+                return;
+            }
+
+            const nominal = parseFloat(document.getElementById('inputCustomNominal').value) || 0;
+            if (nominal <= 0) {
+                showToast('Masukkan nominal Rupiah yang valid!', 'error');
+                return;
+            }
+
+            const selectedMethod = document.querySelector('input[name="topUpPayMethod"]:checked')?.value || 'BCA';
+
+            pendingTopUp.nominal = nominal;
+            pendingTopUp.method = selectedMethod;
+
+            document.getElementById('summaryPayMethod').innerText = selectedMethod;
+            document.getElementById('summaryNominal').innerText = formatIDR(nominal);
+            document.getElementById('inputPinExecution').value = '';
+
+            document.getElementById('modalPinConfirm').classList.remove('hidden');
+        }
+
+        function closePinConfirmModal() {
+            document.getElementById('modalPinConfirm').classList.add('hidden');
+            document.getElementById('inputPinExecution').value = '';
+        }
+
+        async function handleExecuteTopUpWithPin(e) {
+            e.preventDefault();
+            const enteredPin = document.getElementById('inputPinExecution').value;
+            const enteredHash = await hashPin(enteredPin);
+
+            if (enteredHash !== userState.pinHash) {
+                showToast('PIN Aplikasi Salah! Saldo tidak ditambahkan.', 'error');
+                document.getElementById('inputPinExecution').value = '';
+                return;
+            }
+
+            userState.balance += pendingTopUp.nominal;
+
+            // Log top-up to financial history
+            userState.history.unshift({
+                id: 'topup_' + Date.now(),
+                category: 'TOPUP',
+                timestamp: Date.now(),
+                method: pendingTopUp.method,
+                amount: pendingTopUp.nominal,
+                type: 'ISI SALDO'
+            });
+
+            saveUserData();
+            updateAccountUI();
+            renderHistoryTable();
+            closePinConfirmModal();
+
+            showToast(`Isi Saldo Berhasil (${pendingTopUp.method})! Saldo +${formatIDR(pendingTopUp.nominal)}`, 'success');
+
+            document.getElementById('inputCustomNominal').value = '';
+            updateNominalPreview();
+        }
+
+        function switchAppTab(tabName) {
+            activeTab = tabName;
+
+            document.getElementById('pageTrading').classList.add('hidden');
+            document.getElementById('pagePosisi').classList.add('hidden');
+            document.getElementById('pageSaldo').classList.add('hidden');
+            document.getElementById('pageRiwayat').classList.add('hidden');
+            document.getElementById('pageBelajar').classList.add('hidden');
+            document.getElementById('pagePengaturan').classList.add('hidden');
+
+            const navIds = ['navTrading', 'navPosisi', 'navSaldo', 'navRiwayat', 'navBelajar', 'navPengaturan'];
+            navIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.className = "text-gray-400 hover:text-gray-200 shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5";
+                }
+            });
+
+            if (tabName === 'trading') {
+                document.getElementById('pageTrading').classList.remove('hidden');
+                document.getElementById('navTrading').className = "nav-tab-active shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5";
+                setTimeout(resizeCanvas, 50);
+            } else if (tabName === 'posisi') {
+                document.getElementById('pagePosisi').classList.remove('hidden');
+                document.getElementById('navPosisi').className = "nav-tab-active shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5";
+            } else if (tabName === 'saldo') {
+                document.getElementById('pageSaldo').classList.remove('hidden');
+                document.getElementById('navSaldo').className = "nav-tab-active shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5";
+                checkTopUpGuardState();
+            } else if (tabName === 'riwayat') {
+                document.getElementById('pageRiwayat').classList.remove('hidden');
+                document.getElementById('navRiwayat').className = "nav-tab-active shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5";
+            } else if (tabName === 'belajar') {
+                document.getElementById('pageBelajar').classList.remove('hidden');
+                document.getElementById('navBelajar').className = "nav-tab-active shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5";
+            } else if (tabName === 'pengaturan') {
+                document.getElementById('pagePengaturan').classList.remove('hidden');
+                document.getElementById('navPengaturan').className = "nav-tab-active shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5";
+            }
+        }
+
+        function resizeCanvas() {
+            if (!chartCanvas || activeTab !== 'trading') return;
+            const container = chartCanvas.parentElement;
+            if (!container) return;
+            chartCanvas.width = container.clientWidth * window.devicePixelRatio;
+            chartCanvas.height = container.clientHeight * window.devicePixelRatio;
+            chartCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            drawChart();
+        }
+
+        function generateInitialHistory() {
+            const now = Date.now();
+            const candleIntervalMs = 60 * 1000;
+            let basePrice = btcPrice;
+            priceHistory = [];
+
+            for (let i = 50; i >= 1; i--) {
+                const time = now - (i * candleIntervalMs);
+                const changePct = (Math.random() - 0.495) * 0.004;
+                const open = basePrice;
+                const close = open * (1 + changePct);
+                const high = Math.max(open, close) * (1 + Math.random() * 0.0015);
+                const low = Math.min(open, close) * (1 - Math.random() * 0.0015);
+                const volume = Math.random() * 1.5 + 0.2;
+
+                priceHistory.push({ time, open, high, low, close, volume });
+                basePrice = close;
+            }
+
+            btcPrice = basePrice;
+            prevPrice = btcPrice;
+            currentCandle = {
+                time: now,
+                open: btcPrice,
+                high: btcPrice,
+                low: btcPrice,
+                close: btcPrice,
+                volume: 0.1
+            };
+        }
+
+        function startPriceEngine() {
+            if (simInterval) clearInterval(simInterval);
+
+            simInterval = setInterval(() => {
+                const deltaPct = (Math.random() - 0.495) * volatility;
+                prevPrice = btcPrice;
+                btcPrice = Math.round(btcPrice * (1 + deltaPct));
+
+                if (btcPrice > high24h) high24h = btcPrice;
+
+                if (!currentCandle) {
+                    currentCandle = { time: Date.now(), open: btcPrice, high: btcPrice, low: btcPrice, close: btcPrice, volume: 0.05 };
+                } else {
+                    currentCandle.high = Math.max(currentCandle.high, btcPrice);
+                    currentCandle.low = Math.min(currentCandle.low, btcPrice);
+                    currentCandle.close = btcPrice;
+                    currentCandle.volume += Math.random() * 0.05;
+
+                    if (Math.random() < 0.12) {
+                        priceHistory.push({ ...currentCandle });
+                        if (priceHistory.length > 70) priceHistory.shift();
+                        currentCandle = {
+                            time: Date.now(),
+                            open: btcPrice,
+                            high: btcPrice,
+                            low: btcPrice,
+                            close: btcPrice,
+                            volume: 0.05
+                        };
+                    }
+                }
+
+                checkPendingOrders();
+                checkPositionTriggers();
+
+                updatePriceDisplay();
+                updateAccountUI();
+                if (activeTab === 'trading') drawChart();
+
+            }, 1000);
+        }
+
+        // ================= TRADING ENGINE & ORDER MANAGEMENT ================= //
+        function calculatePositionPnL(pos, price) {
+            let diff = pos.type === 'BUY' ? (price - pos.entryPrice) : (pos.entryPrice - price);
+            let amount = diff * pos.amount;
+            let percentage = pos.margin > 0 ? (amount / pos.margin) * 100 : 0;
+            return { amount: Math.round(amount), percentage: percentage.toFixed(2) };
+        }
+
+        function checkPendingOrders() {
+            if (!userState.pendingOrders || userState.pendingOrders.length === 0) return;
+            for (let i = userState.pendingOrders.length - 1; i >= 0; i--) {
+                const order = userState.pendingOrders[i];
+                let triggered = false;
+                if (order.type === 'BUY' && btcPrice <= order.limitPrice) {
+                    triggered = true;
+                } else if (order.type === 'SELL' && btcPrice >= order.limitPrice) {
+                    triggered = true;
+                }
+
+                if (triggered) {
+                    userState.pendingOrders.splice(i, 1);
+                    const entryPrice = order.limitPrice;
+                    const liqPrice = order.type === 'BUY'
+                        ? Math.round(entryPrice * (1 - 1 / order.leverage))
+                        : Math.round(entryPrice * (1 + 1 / order.leverage));
+
+                    userState.openPositions.push({
+                        id: 'pos_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                        type: order.type,
+                        entryPrice: entryPrice,
+                        amount: order.amount,
+                        margin: order.margin,
+                        leverage: order.leverage,
+                        totalValue: order.totalValue,
+                        liqPrice: liqPrice,
+                        slPrice: order.slPrice,
+                        tpPrice: order.tpPrice,
+                        timestamp: Date.now()
+                    });
+                    showToast(`Limit Order ${order.type} tereksekusi pada ${formatIDR(entryPrice)}!`, 'success');
+                }
+            }
+        }
+
+        function checkPositionTriggers() {
+            if (!userState.openPositions || userState.openPositions.length === 0) return;
+            for (let i = userState.openPositions.length - 1; i >= 0; i--) {
+                const pos = userState.openPositions[i];
+                
+                if (pos.tpPrice && pos.tpPrice > 0) {
+                    if ((pos.type === 'BUY' && btcPrice >= pos.tpPrice) || (pos.type === 'SELL' && btcPrice <= pos.tpPrice)) {
+                        closePosition(pos.id, 'Take Profit Target');
+                        continue;
+                    }
+                }
+
+                if (pos.slPrice && pos.slPrice > 0) {
+                    if ((pos.type === 'BUY' && btcPrice <= pos.slPrice) || (pos.type === 'SELL' && btcPrice >= pos.slPrice)) {
+                        closePosition(pos.id, 'Stop Loss Triggered');
+                        continue;
+                    }
+                }
+
+                if ((pos.type === 'BUY' && btcPrice <= pos.liqPrice) || (pos.type === 'SELL' && btcPrice >= pos.liqPrice)) {
+                    closePosition(pos.id, 'Likuidasi (Margin Habis)');
+                }
+            }
+        }
+
+        function setTradeSide(side) {
+            selectedSide = side;
+            const buyBtn = document.getElementById('btnSideBuy');
+            const sellBtn = document.getElementById('btnSideSell');
+            const submitBtn = document.getElementById('btnMainSubmit');
+            const submitIcon = document.getElementById('btnMainSubmitIcon');
+            const submitText = document.getElementById('btnMainSubmitText');
+
+            if (side === 'BUY') {
+                buyBtn.className = "py-2 rounded-lg font-extrabold text-xs text-white bg-emerald-600 shadow flex items-center justify-center space-x-1.5 transition";
+                sellBtn.className = "py-2 rounded-lg font-bold text-xs text-gray-400 hover:text-white flex items-center justify-center space-x-1.5 transition";
+                submitBtn.className = "w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3 px-4 rounded-xl shadow-lg shadow-emerald-950/50 flex items-center justify-center space-x-2 text-sm transition transform active:scale-95";
+                submitIcon.className = "fa-solid fa-arrow-up";
+                submitText.innerText = "EKSEKUSI BUY / LONG BTC";
+            } else {
+                buyBtn.className = "py-2 rounded-lg font-bold text-xs text-gray-400 hover:text-white flex items-center justify-center space-x-1.5 transition";
+                sellBtn.className = "py-2 rounded-lg font-extrabold text-xs text-white bg-rose-600 shadow flex items-center justify-center space-x-1.5 transition";
+                submitBtn.className = "w-full bg-rose-600 hover:bg-rose-500 text-white font-extrabold py-3 px-4 rounded-xl shadow-lg shadow-rose-950/50 flex items-center justify-center space-x-2 text-sm transition transform active:scale-95";
+                submitIcon.className = "fa-solid fa-arrow-down";
+                submitText.innerText = "EKSEKUSI SELL / SHORT BTC";
+            }
+            calculateTradeValues();
+        }
+
+        function setOrderType(type) {
+            orderType = type;
+            const mktBtn = document.getElementById('btnOrderMarket');
+            const lmtBtn = document.getElementById('btnOrderLimit');
+            const limitGroup = document.getElementById('limitPriceGroup');
+
+            if (type === 'MARKET') {
+                mktBtn.className = "py-1 rounded font-semibold bg-gray-800 text-white shadow";
+                lmtBtn.className = "py-1 rounded font-semibold text-gray-400 hover:text-gray-200";
+                limitGroup.classList.add('hidden');
+            } else {
+                lmtBtn.className = "py-1 rounded font-semibold bg-gray-800 text-white shadow";
+                mktBtn.className = "py-1 rounded font-semibold text-gray-400 hover:text-gray-200";
+                limitGroup.classList.remove('hidden');
+                document.getElementById('inputLimitPrice').value = btcPrice;
+            }
+            calculateTradeValues();
+        }
+
+        function setLeverage(lev) {
+            currentLeverage = lev;
+            const levBtns = document.querySelectorAll('.lev-btn');
+            levBtns.forEach(btn => {
+                if (btn.innerText === lev + 'x') {
+                    btn.className = "lev-btn bg-blue-600 text-white py-1 rounded font-mono font-bold text-xs";
+                } else {
+                    btn.className = "lev-btn bg-gray-800 hover:bg-gray-700 text-gray-300 py-1 rounded font-mono text-xs";
+                }
+            });
+            document.getElementById('leverageValueDisplay').innerText = lev === 1 ? '1x (Spot)' : lev + 'x (Futures)';
+            calculateTradeValues();
+        }
+
+        function fillAmountPercent(pct) {
+            const limitPrice = parseFloat(document.getElementById('inputLimitPrice').value) || btcPrice;
+            const effectivePrice = orderType === 'LIMIT' ? limitPrice : btcPrice;
+            const availableBalance = userState.balance * (pct / 100);
+            const maxBtc = (availableBalance * currentLeverage) / effectivePrice;
+            
+            document.getElementById('inputBtcAmount').value = maxBtc.toFixed(8);
+            handleBtcInputChanged();
+        }
+
+        function executeCurrentOrder() {
+            const btcAmount = parseFloat(document.getElementById('inputBtcAmount').value);
+            if (!btcAmount || btcAmount <= 0) {
+                showToast('Jumlah BTC tidak valid!', 'error');
+                return;
+            }
+
+            const limitPrice = parseFloat(document.getElementById('inputLimitPrice').value);
+            if (orderType === 'LIMIT' && (!limitPrice || limitPrice <= 0)) {
+                showToast('Harga Limit tidak valid!', 'error');
+                return;
+            }
+
+            const effectivePrice = orderType === 'LIMIT' ? limitPrice : btcPrice;
+            const totalValue = Math.round(btcAmount * effectivePrice);
+            const requiredMargin = Math.round(totalValue / currentLeverage);
+
+            if (requiredMargin > userState.balance) {
+                showToast('Saldo Anda tidak mencukupi untuk margin transaksi ini!', 'error');
+                return;
+            }
+
+            const slPrice = parseFloat(document.getElementById('inputSlPrice').value) || null;
+            const tpPrice = parseFloat(document.getElementById('inputTpPrice').value) || null;
+
+            if (orderType === 'MARKET') {
+                userState.balance -= requiredMargin;
+                const liqPrice = selectedSide === 'BUY'
+                    ? Math.round(effectivePrice * (1 - 1 / currentLeverage))
+                    : Math.round(effectivePrice * (1 + 1 / currentLeverage));
+
+                userState.openPositions.push({
+                    id: 'pos_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                    type: selectedSide,
+                    entryPrice: effectivePrice,
+                    amount: btcAmount,
+                    margin: requiredMargin,
+                    leverage: currentLeverage,
+                    totalValue: totalValue,
+                    liqPrice: liqPrice,
+                    slPrice: slPrice,
+                    tpPrice: tpPrice,
+                    timestamp: Date.now()
+                });
+
+                showToast(`Posisi ${selectedSide} (${currentLeverage}x) sebesar ${btcAmount} BTC berhasil dibuka!`, 'success');
+            } else {
+                userState.pendingOrders.push({
+                    id: 'ord_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                    type: selectedSide,
+                    orderType: 'LIMIT',
+                    limitPrice: limitPrice,
+                    amount: btcAmount,
+                    margin: requiredMargin,
+                    leverage: currentLeverage,
+                    totalValue: totalValue,
+                    slPrice: slPrice,
+                    tpPrice: tpPrice,
+                    timestamp: Date.now()
+                });
+
+                showToast(`Limit Order ${selectedSide} diset pada ${formatIDR(limitPrice)}`, 'info');
+            }
+
+            document.getElementById('inputBtcAmount').value = '';
+            document.getElementById('inputRupiahAmount').value = '';
+            document.getElementById('inputSlPrice').value = '';
+            document.getElementById('inputTpPrice').value = '';
+
+            updateAccountUI();
+            renderPendingOrdersTable();
+            renderPositionsTable();
+        }
+
+        function closePosition(posId, reason = 'Manual Close') {
+            const index = userState.openPositions.findIndex(p => p.id === posId);
+            if (index === -1) return;
+
+            const pos = userState.openPositions[index];
+            const pnl = calculatePositionPnL(pos, btcPrice);
+
+            userState.balance += (pos.margin + pnl.amount);
+
+            userState.history.unshift({
+                id: 'hist_' + Date.now(),
+                category: 'TRADING',
+                timestamp: Date.now(),
+                type: pos.type,
+                entryPrice: pos.entryPrice,
+                exitPrice: btcPrice,
+                amount: pos.amount,
+                totalValue: pos.totalValue,
+                pnl: pnl.amount,
+                reason: reason
+            });
+
+            userState.openPositions.splice(index, 1);
+
+            const isProfit = pnl.amount >= 0;
+            showToast(`Posisi ${pos.type} ditutup (${reason}). PnL: ${isProfit ? '+' : ''}${formatIDR(pnl.amount)}`, isProfit ? 'success' : 'error');
+
+            updateAccountUI();
+            renderPositionsTable();
+            renderHistoryTable();
+        }
+
+        function cancelPendingOrder(orderId) {
+            const idx = userState.pendingOrders.findIndex(o => o.id === orderId);
+            if (idx !== -1) {
+                userState.pendingOrders.splice(idx, 1);
+                showToast('Pending Limit Order dibatalkan', 'info');
+                renderPendingOrdersTable();
+            }
+        }
+
+        function renderPositionsTable() {
+            const tbody = document.getElementById('openPositionsTableBody');
+            if (!tbody) return;
+
+            if (!userState.openPositions || userState.openPositions.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="p-8 text-center text-gray-500 font-sans">
+                            <i class="fa-solid fa-inbox text-3xl mb-2 block"></i>
+                            Belum ada posisi transaksi yang terbuka.<br>Buka menu <strong>Trading</strong> untuk memulai transaksi!
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            tbody.innerHTML = userState.openPositions.map(pos => {
+                const pnl = calculatePositionPnL(pos, btcPrice);
+                const isUp = pnl.amount >= 0;
+                const pnlClass = isUp ? 'text-figUp' : 'text-figDown';
+                const typeBadge = pos.type === 'BUY'
+                    ? '<span class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold">BUY / LONG</span>'
+                    : '<span class="px-1.5 py-0.5 rounded bg-rose-950 text-rose-400 border border-rose-800 text-[10px] font-bold">SELL / SHORT</span>';
+
+                return `
+                    <tr class="hover:bg-figDark/50 border-b border-figBorder/30">
+                        <td class="p-2.5">${typeBadge} <span class="text-[10px] text-gray-400 ml-1">${pos.leverage}x</span></td>
+                        <td class="p-2.5 font-bold">${pos.amount} BTC</td>
+                        <td class="p-2.5">${formatIDR(pos.entryPrice)}</td>
+                        <td class="p-2.5">${formatIDR(btcPrice)}</td>
+                        <td class="p-2.5 text-amber-300">${formatIDR(pos.margin)}</td>
+                        <td class="p-2.5 text-rose-400">${formatIDR(pos.liqPrice)}</td>
+                        <td class="p-2.5 font-bold ${pnlClass}">${isUp ? '+' : ''}${formatIDR(pnl.amount)} (${pnl.percentage}%)</td>
+                        <td class="p-2.5 text-[10px] text-gray-400">
+                            SL: ${pos.slPrice ? formatCompactIDR(pos.slPrice) : '-'}<br>
+                            TP: ${pos.tpPrice ? formatCompactIDR(pos.tpPrice) : '-'}
+                        </td>
+                        <td class="p-2.5 text-right">
+                            <button onclick="closePosition('${pos.id}', 'Manual')" class="bg-rose-600 hover:bg-rose-500 text-white font-bold px-2.5 py-1 rounded text-[11px] transition">
+                                Tutup
+                            </button>
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
+
+        function renderPendingOrdersTable() {
+            const tbody = document.getElementById('pendingOrdersTableBody');
+            if (!tbody) return;
+
+            if (!userState.pendingOrders || userState.pendingOrders.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500 font-sans">Tidak ada pending order.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = userState.pendingOrders.map(ord => {
+                const dateStr = new Date(ord.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                const typeBadge = ord.type === 'BUY'
+                    ? '<span class="text-emerald-400 font-bold">BUY LIMIT</span>'
+                    : '<span class="text-rose-400 font-bold">SELL LIMIT</span>';
+
+                return `
+                    <tr class="hover:bg-figDark/50 border-b border-figBorder/30">
+                        <td class="p-2 text-gray-400">${dateStr}</td>
+                        <td class="p-2">${typeBadge} (${ord.leverage}x)</td>
+                        <td class="p-2 font-bold">${formatIDR(ord.limitPrice)}</td>
+                        <td class="p-2">${ord.amount} BTC</td>
+                        <td class="p-2">${formatIDR(ord.totalValue)}</td>
+                        <td class="p-2 text-right">
+                            <button onclick="cancelPendingOrder('${ord.id}')" class="bg-gray-800 hover:bg-gray-700 text-rose-400 px-2 py-0.5 rounded text-[10px] transition">
+                                Batal
+                            </button>
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
+
+        function renderHistoryTable() {
+            const tbody = document.getElementById('tradeHistoryTableBody');
+            if (!tbody) return;
+
+            if (!userState.history || userState.history.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="p-8 text-center text-gray-500 font-sans">
+                            <i class="fa-solid fa-receipt text-3xl mb-2 block"></i>
+                            Belum ada riwayat transaksi selesai.
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            tbody.innerHTML = userState.history.map(item => {
+                const timeStr = new Date(item.timestamp).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
+                
+                if (item.category === 'TOPUP') {
+                    return `
+                        <tr class="hover:bg-figDark/50 border-b border-figBorder/30">
+                            <td class="p-2.5 text-gray-400">${timeStr}</td>
+                            <td class="p-2.5">
+                                <span class="bg-blue-900/60 text-blue-300 border border-blue-700/50 px-2 py-0.5 rounded font-bold text-[10px]">
+                                    <i class="fa-solid fa-arrow-down-to-bracket me-1"></i>ISI SALDO
+                                </span>
+                            </td>
+                            <td class="p-2.5 text-gray-300">Metode Pembayaran: <strong class="text-white">${item.method}</strong></td>
+                            <td class="p-2.5 font-bold text-emerald-400">+${formatIDR(item.amount)}</td>
+                            <td class="p-2.5 text-right font-bold text-emerald-400">+${formatIDR(item.amount)}</td>
+                        </tr>`;
+                } else {
+                    const isUp = item.pnl >= 0;
+                    const pnlClass = isUp ? 'text-figUp' : 'text-figDown';
+                    const badge = item.type === 'BUY'
+                        ? '<span class="text-emerald-400 font-bold">TRADING BUY</span>'
+                        : '<span class="text-rose-400 font-bold">TRADING SELL</span>';
+
+                    return `
+                        <tr class="hover:bg-figDark/50 border-b border-figBorder/30">
+                            <td class="p-2.5 text-gray-400">${timeStr}</td>
+                            <td class="p-2.5">${badge}</td>
+                            <td class="p-2.5 text-gray-300">Entry: ${formatCompactIDR(item.entryPrice)} &rarr; Exit: ${formatCompactIDR(item.exitPrice)} (${item.amount} BTC)</td>
+                            <td class="p-2.5">${formatIDR(item.totalValue)}</td>
+                            <td class="p-2.5 text-right font-bold ${pnlClass}">${isUp ? '+' : ''}${formatIDR(item.pnl)}</td>
+                        </tr>`;
+                }
+            }).join('');
+        }
+
+        function setTimeframe(tf) {
+            selectedTimeframe = tf;
+            const tfs = ['1m', '5m', '15m', '1h'];
+            tfs.forEach(item => {
+                const el = document.getElementById('tf-' + item);
+                if (el) {
+                    el.className = item === tf
+                        ? "px-2 py-0.5 rounded bg-blue-600 text-white font-bold text-[10px]"
+                        : "px-2 py-0.5 rounded hover:bg-gray-800 text-[10px]";
+                }
+            });
+            drawChart();
+        }
+
+        function toggleIndicators() {
+            showEma = document.getElementById('chkEma').checked;
+            showVol = document.getElementById('chkVol').checked;
+            drawChart();
+        }
+
+        function resetAccount() {
+            userState.balance = INITIAL_BALANCE;
+            userState.openPositions = [];
+            userState.pendingOrders = [];
+            userState.history = [];
+            saveUserData();
+            updateAccountUI();
+            renderPositionsTable();
+            renderPendingOrdersTable();
+            renderHistoryTable();
+            showToast('Saldo dan Akun berhasil di-reset ke Rp 100.000.000', 'success');
+        }
+
+        function updatePriceDisplay() {
+            const priceEl = document.getElementById('liveBtcPrice');
+            const changeEl = document.getElementById('priceChange24h');
+            const miniPriceEl = document.getElementById('miniBtcPrice');
+
+            const formatted = formatIDR(btcPrice);
+            priceEl.innerText = formatted;
+            miniPriceEl.innerText = formatted;
+
+            if (btcPrice > prevPrice) {
+                priceEl.className = "text-lg sm:text-2xl font-black font-mono tracking-tight text-figUp text-right";
+                miniPriceEl.className = "text-figUp";
+            } else if (btcPrice < prevPrice) {
+                priceEl.className = "text-lg sm:text-2xl font-black font-mono tracking-tight text-figDown text-right";
+                miniPriceEl.className = "text-figDown";
+            }
+
+            const diff = btcPrice - 1650000000;
+            const pct = ((diff / 1650000000) * 100).toFixed(2);
+            if (diff >= 0) {
+                changeEl.className = "text-figUp font-semibold flex items-center justify-end";
+                changeEl.innerHTML = `<i class="fa-solid fa-caret-up me-1"></i>+${pct}%`;
+            } else {
+                changeEl.className = "text-figDown font-semibold flex items-center justify-end";
+                changeEl.innerHTML = `<i class="fa-solid fa-caret-down me-1"></i>${pct}%`;
+            }
+
+            document.getElementById('high24h').innerText = formatIDR(high24h);
+        }
+
+        function drawChart() {
+            if (!chartCtx || !chartCanvas || activeTab !== 'trading') return;
+            const w = chartCanvas.width / window.devicePixelRatio;
+            const h = chartCanvas.height / window.devicePixelRatio;
+
+            chartCtx.fillStyle = '#151922';
+            chartCtx.fillRect(0, 0, w, h);
+
+            const allCandles = [...priceHistory];
+            if (currentCandle) allCandles.push(currentCandle);
+            if (allCandles.length === 0) return;
+
+            let minP = Math.min(...allCandles.map(c => c.low));
+            let maxP = Math.max(...allCandles.map(c => c.high));
+            const pricePadding = (maxP - minP) * 0.08 || 1000000;
+            minP -= pricePadding;
+            maxP += pricePadding;
+
+            const paddingRight = 85;
+            const paddingBottom = 20;
+            const chartW = w - paddingRight;
+            const chartH = h - paddingBottom;
+
+            chartCtx.strokeStyle = '#232A37';
+            chartCtx.lineWidth = 1;
+            chartCtx.font = '10px monospace';
+            chartCtx.fillStyle = '#6B7280';
+
+            const gridRows = 4;
+            for (let i = 0; i <= gridRows; i++) {
+                const y = (chartH / gridRows) * i;
+                const pValue = maxP - (i / gridRows) * (maxP - minP);
+
+                chartCtx.beginPath();
+                chartCtx.moveTo(0, y);
+                chartCtx.lineTo(chartW, y);
+                chartCtx.stroke();
+
+                chartCtx.fillText(formatCompactIDR(pValue), chartW + 6, y + 3);
+            }
+
+            const count = allCandles.length;
+            const candleWidth = Math.max(2, (chartW / count) * 0.65);
+            const gap = chartW / count;
+
+            allCandles.forEach((c, idx) => {
+                const x = idx * gap + gap / 2;
+
+                const yOpen = chartH - ((c.open - minP) / (maxP - minP)) * chartH;
+                const yClose = chartH - ((c.close - minP) / (maxP - minP)) * chartH;
+                const yHigh = chartH - ((c.high - minP) / (maxP - minP)) * chartH;
+                const yLow = chartH - ((c.low - minP) / (maxP - minP)) * chartH;
+
+                const isUp = c.close >= c.open;
+                const candleColor = isUp ? '#10B981' : '#EF4444';
+
+                chartCtx.strokeStyle = candleColor;
+                chartCtx.lineWidth = 1.2;
+                chartCtx.beginPath();
+                chartCtx.moveTo(x, yHigh);
+                chartCtx.lineTo(x, yLow);
+                chartCtx.stroke();
+
+                chartCtx.fillStyle = candleColor;
+                const bodyY = Math.min(yOpen, yClose);
+                const bodyH = Math.max(2, Math.abs(yClose - yOpen));
+                chartCtx.fillRect(x - candleWidth / 2, bodyY, candleWidth, bodyH);
+
+                if (showVol) {
+                    const maxVol = Math.max(...allCandles.map(item => item.volume || 1));
+                    const volH = ((c.volume || 0.1) / maxVol) * (chartH * 0.18);
+                    chartCtx.fillStyle = isUp ? 'rgba(16, 185, 129, 0.22)' : 'rgba(239, 68, 68, 0.22)';
+                    chartCtx.fillRect(x - candleWidth / 2, chartH - volH, candleWidth, volH);
+                }
+            });
+
+            const currentY = chartH - ((btcPrice - minP) / (maxP - minP)) * chartH;
+            chartCtx.strokeStyle = '#3B82F6';
+            chartCtx.setLineDash([3, 3]);
+            chartCtx.beginPath();
+            chartCtx.moveTo(0, currentY);
+            chartCtx.lineTo(chartW, currentY);
+            chartCtx.stroke();
+            chartCtx.setLineDash([]);
+
+            chartCtx.fillStyle = '#2563EB';
+            chartCtx.fillRect(chartW, currentY - 9, paddingRight, 18);
+            chartCtx.fillStyle = '#FFFFFF';
+            chartCtx.font = 'bold 9px monospace';
+            chartCtx.fillText(formatCompactIDR(btcPrice), chartW + 5, currentY + 3);
+
+            userState.openPositions.forEach(pos => {
+                const posY = chartH - ((pos.entryPrice - minP) / (maxP - minP)) * chartH;
+                if (posY >= 0 && posY <= chartH) {
+                    chartCtx.strokeStyle = pos.type === 'BUY' ? '#10B981' : '#EF4444';
+                    chartCtx.setLineDash([2, 2]);
+                    chartCtx.beginPath();
+                    chartCtx.moveTo(0, posY);
+                    chartCtx.lineTo(chartW, posY);
+                    chartCtx.stroke();
+                    chartCtx.setLineDash([]);
+
+                    chartCtx.fillStyle = pos.type === 'BUY' ? '#065F46' : '#991B1B';
+                    chartCtx.fillRect(0, posY - 7, 85, 14);
+                    chartCtx.fillStyle = '#FFFFFF';
+                    chartCtx.font = '8px sans-serif';
+                    chartCtx.fillText(`${pos.type} @ ${formatCompactIDR(pos.entryPrice)}`, 4, posY + 3);
+                }
+            });
+        }
+
+        function handleChartHover(e) {
+            if (!priceHistory.length || activeTab !== 'trading') return;
+            const rect = chartCanvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const count = priceHistory.length + (currentCandle ? 1 : 0);
+            const gap = (chartCanvas.width / window.devicePixelRatio - 85) / count;
+
+            const idx = Math.min(count - 1, Math.max(0, Math.floor(mouseX / gap)));
+            const candle = idx < priceHistory.length ? priceHistory[idx] : currentCandle;
+
+            if (candle) {
+                document.getElementById('candleOhlcText').innerHTML =
+                    `<span class="text-gray-400">O:</span> ${formatCompactIDR(candle.open)} | ` +
+                    `<span class="text-gray-400">H:</span> ${formatCompactIDR(candle.high)} | ` +
+                    `<span class="text-gray-400">L:</span> ${formatCompactIDR(candle.low)} | ` +
+                    `<span class="text-gray-400">C:</span> ${formatCompactIDR(candle.close)}`;
+            }
+        }
+
+        function updateAccountUI() {
+            let totalUnrealizedPnl = 0;
+            let totalUsedMargin = 0;
+            let totalPosValue = 0;
+
+            userState.openPositions.forEach(pos => {
+                const pnl = calculatePositionPnL(pos, btcPrice);
+                pos.currentPnl = pnl.amount;
+                pos.currentPnlPct = pnl.percentage;
+                totalUnrealizedPnl += pnl.amount;
+                totalUsedMargin += pos.margin;
+                totalPosValue += pos.totalValue;
+            });
+
+            const equity = userState.balance + totalUnrealizedPnl;
+
+            document.getElementById('saldoTersedia').innerText = formatIDR(userState.balance);
+            document.getElementById('saldoEquity').innerText = formatIDR(equity);
+            document.getElementById('saldoMargin').innerText = formatIDR(totalUsedMargin);
+            document.getElementById('saldoPositionValue').innerText = formatIDR(totalPosValue);
+
+            const pnlEl = document.getElementById('saldoPnl');
+            const tradingPnlEl = document.getElementById('tradingPagePnlDisplay');
+            const pnlPct = totalUsedMargin > 0 ? ((totalUnrealizedPnl / totalUsedMargin) * 100).toFixed(2) : '0.00';
+
+            const pnlString = totalUnrealizedPnl > 0 
+                ? `+${formatIDR(totalUnrealizedPnl)} (+${pnlPct}%)`
+                : totalUnrealizedPnl < 0
+                ? `${formatIDR(totalUnrealizedPnl)} (${pnlPct}%)`
+                : `Rp 0 (0.00%)`;
+
+            const pnlClass = totalUnrealizedPnl > 0
+                ? "font-mono font-bold text-figUp"
+                : totalUnrealizedPnl < 0
+                ? "font-mono font-bold text-figDown"
+                : "font-mono font-bold text-gray-300";
+
+            if (pnlEl) {
+                pnlEl.className = "text-lg sm:text-xl font-bold font-mono " + (totalUnrealizedPnl > 0 ? "text-figUp" : totalUnrealizedPnl < 0 ? "text-figDown" : "text-gray-300");
+                pnlEl.innerText = pnlString;
+            }
+
+            if (tradingPnlEl) {
+                tradingPnlEl.className = pnlClass;
+                tradingPnlEl.innerText = pnlString;
+            }
+
+            document.getElementById('navPosBadge').innerText = userState.openPositions.length;
+            document.getElementById('posCountBadge').innerText = `${userState.openPositions.length} Posisi`;
+
+            const maxBtc = (userState.balance * currentLeverage) / btcPrice;
+            document.getElementById('maxBtcBuyDisplay').innerText = `${maxBtc.toFixed(4)} BTC`;
+
+            renderPositionsTable();
+            saveUserData();
+        }
+
+        // SAVE USER DATA TO BOTH LOCALSTORAGE & FIRESTORE CLOUD DATABASE
+        function saveUserData() {
+            try {
+                localStorage.setItem('FIG_USER_DATA_V6', JSON.stringify(userState));
+            } catch(e) {}
+
+            if (window.db && window.firebaseModules && window.firestoreSyncActive) {
+                try {
+                    const { doc, setDoc } = window.firebaseModules;
+                    if (doc && setDoc) {
+                        const isUserLoggedIn = userState.profile && userState.profile.isLoggedIn && userState.profile.phone;
+                        let accountKey = isUserLoggedIn
+                            ? 'acc_' + userState.profile.phone.replace(/[^0-9]/g, '')
+                            : 'guest_' + (window.currentAuthUser ? window.currentAuthUser.uid : 'device');
+
+                        const docRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'userAccounts', accountKey);
+                        
+                        setDoc(docRef, userState, { merge: true }).catch(err => {
+                            console.warn("Cloud save notice:", err);
+                        });
+                    }
+                } catch(e) {
+                    console.warn("Cloud save error:", e);
+                }
+            }
+        }
+
+        function loadUserData() {
+            try {
+                const saved = localStorage.getItem('FIG_USER_DATA_V6') || localStorage.getItem('FIG_USER_DATA_V5');
+                if (saved) {
+                    userState = { ...userState, ...JSON.parse(saved) };
+                    if (userState.profile && userState.profile.name) {
+                        userState.profile.name = userState.profile.name.toUpperCase();
+                    }
+                }
+            } catch(e) {}
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            let bg = 'bg-gray-800 border-gray-700 text-gray-200';
+            let icon = 'fa-circle-info text-blue-400';
+
+            if (type === 'success') {
+                bg = 'bg-emerald-950/90 border-emerald-800 text-emerald-200';
+                icon = 'fa-circle-check text-emerald-400';
+            } else if (type === 'error') {
+                bg = 'bg-rose-950/90 border-rose-800 text-rose-200';
+                icon = 'fa-circle-xmark text-rose-400';
+            }
+
+            toast.className = `pointer-events-auto border px-3.5 py-2.5 rounded-xl shadow-xl text-xs flex items-center space-x-2.5 transform transition duration-300 translate-y-2 opacity-0 ${bg}`;
+            toast.innerHTML = `<i class="fa-solid ${icon} text-base shrink-0"></i><span>${message}</span>`;
+
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function formatIDR(val) {
+            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
+        }
+
+        function formatCompactIDR(val) {
+            if (val >= 1000000000) {
+                return 'Rp ' + (val / 1000000000).toFixed(3) + ' M';
+            } else if (val >= 1000000) {
+                return 'Rp ' + (val / 1000000).toFixed(1) + ' Jt';
+            }
+            return formatIDR(val);
+        }
+    </script>
+</body>
+</html>
